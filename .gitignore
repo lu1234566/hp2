@@ -1,0 +1,48 @@
+# Binaries
+*.exe
+*.dll
+*.mds
+*.mdf
+*.iso
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+
+# Media
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.mp3
+*.wav
+*.ogg
+*.mp4
+*.avi
+
+# Build artifacts
+build/
+*.so
+*.apk
+*.obb
+*.o
+*.obj
+*.a
+*.lib
+
+# IDE
+.vscode/
+.idea/
+*.sln
+*.vcxproj
+
+# Android
+.gradle/
+local.properties
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
