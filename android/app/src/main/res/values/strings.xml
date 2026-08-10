@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">HP2 Mobile</string>
+    <string name="installing_assets">Installing game assets...</string>
+    <string name="controller_required">Bluetooth/USB controller required</string>
+</resources>
