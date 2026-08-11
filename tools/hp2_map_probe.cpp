@@ -1,6 +1,7 @@
 #include "hp2/ue_actor.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_lightmap.h"
+#include "hp2/ue_mesh.h"
 #include "hp2/ue_package.h"
 #include "hp2/ue_texture.h"
 
@@ -118,17 +119,21 @@ int main(int argc, char** argv) {
     hp2::DecodedTextureSet textures;
     hp2::LightMapAtlas light_maps;
     const hp2::LevelActorCensus actors = hp2::LoadLevelActorCensus(package);
+    hp2::ActorMeshScene actor_meshes;
     const bool texture_probe_requested = argc == 3;
     if (texture_probe_requested && model.valid) {
         texture = hp2::LoadFirstSurfaceTexture(argv[2], package, model);
         textures = hp2::LoadSurfaceTextures(argv[2], package, model);
         light_maps = hp2::BuildVisibilityLightMapAtlas(model);
+        if (actors.valid) {
+            actor_meshes = hp2::LoadDirectActorMeshes(argv[2], package, actors);
+        }
     } else if (texture_probe_requested) {
         texture.error = "model geometry is invalid";
     }
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v4\",\n"
+              << "  \"schema\": \"hp2-map-index-v5\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -256,6 +261,37 @@ int main(int argc, char** argv) {
         std::cout << "\n";
     }
     std::cout << "  },\n"
+              << "  \"g5_direct_mesh_scene\": {\n"
+              << "    \"requested\": " << (texture_probe_requested ? "true" : "false") << ",\n"
+              << "    \"valid\": " << (actor_meshes.valid ? "true" : "false") << ",\n"
+              << "    \"candidate_instances\": " << actor_meshes.candidate_instances << ",\n"
+              << "    \"decoded_mesh_assets\": " << actor_meshes.decoded_mesh_assets << ",\n"
+              << "    \"decoded_mesh_instances\": " << actor_meshes.decoded_mesh_instances << ",\n"
+              << "    \"failed_mesh_instances\": " << actor_meshes.failed_mesh_instances << ",\n"
+              << "    \"source_triangles\": " << actor_meshes.source_triangles << ",\n"
+              << "    \"textured_triangles\": " << actor_meshes.textured_triangles << ",\n"
+              << "    \"decoded_materials\": " << actor_meshes.decoded_materials << ",\n"
+              << "    \"failed_materials\": " << actor_meshes.failed_materials << ",\n"
+              << "    \"assets\": [\n";
+    for (std::size_t index = 0; index < actor_meshes.assets.size(); ++index) {
+        const auto& asset = actor_meshes.assets[index];
+        std::cout << "      {\"package_name\": \"" << JsonEscape(asset.package_name)
+                  << "\", \"object_name\": \"" << JsonEscape(asset.object_name)
+                  << "\", \"class_name\": \"" << JsonEscape(asset.class_name)
+                  << "\", \"vertices\": " << asset.vertices
+                  << ", \"triangles\": " << asset.triangles
+                  << ", \"texture_slots\": " << asset.texture_slots
+                  << ", \"skeletal_points\": " << asset.skeletal_points
+                  << ", \"skeletal_bones\": " << asset.skeletal_bones << "}"
+                  << (index + 1 == actor_meshes.assets.size() ? "" : ",") << '\n';
+    }
+    std::cout << "    ]";
+    if (!actor_meshes.error.empty()) {
+        std::cout << ",\n    \"error\": \"" << JsonEscape(actor_meshes.error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "  },\n"
               << "  \"imports\": [\n";
 
     for (std::size_t index = 0; index < package.imports.size(); ++index) {
@@ -297,5 +333,8 @@ int main(int argc, char** argv) {
     if (texture_probe_requested && !light_maps.valid) {
         return 6;
     }
-    return !actors.valid || actors.parsed_actor_count == 0 ? 7 : 0;
+    if (!actors.valid || actors.parsed_actor_count == 0) {
+        return 7;
+    }
+    return texture_probe_requested && !actor_meshes.valid ? 8 : 0;
 }

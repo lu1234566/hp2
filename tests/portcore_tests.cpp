@@ -1,6 +1,7 @@
 #include "hp2/runtime.h"
 #include "hp2/ue_actor.h"
 #include "hp2/ue_lightmap.h"
+#include "hp2/ue_mesh.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
 #include "hp2/ue_texture.h"
@@ -220,6 +221,128 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
     output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
+std::uint32_t PackMeshVertex(std::int32_t x, std::int32_t y, std::int32_t z) {
+    return (static_cast<std::uint32_t>(x) & 0x7ffu)
+        | ((static_cast<std::uint32_t>(y) & 0x7ffu) << 11u)
+        | ((static_cast<std::uint32_t>(z) & 0x3ffu) << 22u);
+}
+
+std::vector<std::uint8_t> MakeMeshPayload(std::int32_t serial_offset) {
+    std::vector<std::uint8_t> payload;
+    AppendCompactIndex(payload, 0);  // tagged-property terminator: None
+
+    AppendVec3(payload, -8.0f, -8.0f, -8.0f);  // primitive bounds min
+    AppendVec3(payload, 8.0f, 8.0f, 8.0f);     // primitive bounds max
+    payload.push_back(1);                       // bounds valid
+    AppendVec3(payload, 0.0f, 0.0f, 0.0f);     // sphere center
+    AppendF32(payload, 12.0f);                  // sphere radius
+
+    const std::size_t vertices_end_position = payload.size();
+    AppendU32(payload, 0);
+    AppendCompactIndex(payload, 3);
+    AppendU32(payload, PackMeshVertex(1, 2, 3));
+    AppendU32(payload, PackMeshVertex(5, 2, 3));
+    AppendU32(payload, PackMeshVertex(1, 6, 3));
+    WriteU32(payload, vertices_end_position,
+             static_cast<std::uint32_t>(serial_offset + payload.size()));
+
+    const std::size_t triangles_end_position = payload.size();
+    AppendU32(payload, 0);
+    AppendCompactIndex(payload, 1);
+    AppendU16(payload, 0);
+    AppendU16(payload, 1);
+    AppendU16(payload, 2);
+    payload.insert(payload.end(), {0u, 0u, 255u, 0u, 0u, 255u});
+    AppendU32(payload, 0);  // triangle flags
+    AppendU32(payload, 0);  // texture slot
+    WriteU32(payload, triangles_end_position,
+             static_cast<std::uint32_t>(serial_offset + payload.size()));
+
+    AppendCompactIndex(payload, 0);  // animation sequences
+    const std::size_t connects_end_position = payload.size();
+    AppendU32(payload, 0);
+    AppendCompactIndex(payload, 0);
+    WriteU32(payload, connects_end_position,
+             static_cast<std::uint32_t>(serial_offset + payload.size()));
+
+    AppendVec3(payload, -8.0f, -8.0f, -8.0f);  // mesh bounds min
+    AppendVec3(payload, 8.0f, 8.0f, 8.0f);     // mesh bounds max
+    payload.push_back(1);
+    AppendVec3(payload, 0.0f, 0.0f, 0.0f);
+    AppendF32(payload, 12.0f);
+
+    const std::size_t links_end_position = payload.size();
+    AppendU32(payload, 0);
+    AppendCompactIndex(payload, 0);
+    WriteU32(payload, links_end_position,
+             static_cast<std::uint32_t>(serial_offset + payload.size()));
+
+    AppendCompactIndex(payload, 0);  // textures
+    AppendCompactIndex(payload, 0);  // bounding boxes
+    AppendCompactIndex(payload, 0);  // bounding spheres
+    AppendU32(payload, 3);           // frame vertices
+    AppendU32(payload, 1);           // animation frames
+    AppendU32(payload, 0);           // mesh flags and mesh-and-lod flags
+    AppendU32(payload, 0);
+    AppendVec3(payload, 1.0f, 1.0f, 1.0f);  // mesh scale
+    AppendVec3(payload, 0.0f, 0.0f, 0.0f);  // mesh origin
+    AppendU32(payload, 0);           // rotation origin pitch
+    AppendU32(payload, 0);           // rotation origin yaw
+    AppendU32(payload, 0);           // rotation origin roll
+    AppendU32(payload, 0);           // current polygon
+    AppendU32(payload, 0);           // current vertex
+    AppendCompactIndex(payload, 0);  // texture LOD array (version >= 66)
+    return payload;
+}
+
+void WriteSyntheticMeshPackage(const std::filesystem::path& path) {
+    std::vector<std::uint8_t> bytes(64, 0);
+    WriteU32(bytes, 0, hp2::kUnrealPackageTag);
+    WriteU16(bytes, 4, 79);
+
+    const std::vector<std::string> names = {
+        "None", "Core", "Class", "Mesh", "ChairMesh"
+    };
+    const std::size_t name_offset = bytes.size();
+    for (const auto& name : names) {
+        AppendName(bytes, name);
+    }
+
+    const std::size_t import_offset = bytes.size();
+    AppendCompactIndex(bytes, 1);  // Core
+    AppendCompactIndex(bytes, 2);  // Class
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 3);  // Mesh
+
+    const std::size_t export_offset = bytes.size();
+    std::size_t table_size = 16;
+    std::vector<std::uint8_t> export_table;
+    std::vector<std::uint8_t> mesh_payload;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto mesh_offset = static_cast<std::int32_t>(export_offset + table_size);
+        mesh_payload = MakeMeshPayload(mesh_offset);
+        export_table.clear();
+        AppendExportRecord(export_table, -1, 4,
+                           static_cast<std::int32_t>(mesh_payload.size()), mesh_offset);
+        if (export_table.size() == table_size) {
+            break;
+        }
+        table_size = export_table.size();
+    }
+    bytes.insert(bytes.end(), export_table.begin(), export_table.end());
+    bytes.insert(bytes.end(), mesh_payload.begin(), mesh_payload.end());
+
+    WriteU32(bytes, 12, static_cast<std::uint32_t>(names.size()));
+    WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
+    WriteU32(bytes, 20, 1);
+    WriteU32(bytes, 24, static_cast<std::uint32_t>(export_offset));
+    WriteU32(bytes, 28, 1);
+    WriteU32(bytes, 32, static_cast<std::uint32_t>(import_offset));
+
+    std::ofstream output(path, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
 std::vector<std::uint8_t> MakeTexturePayload(std::int32_t serial_offset) {
     std::vector<std::uint8_t> payload;
     AppendCompactIndex(payload, 4);  // Palette property
@@ -326,8 +449,10 @@ int main() {
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto root = std::filesystem::temp_directory_path() / ("hp2-portcore-test-" + std::to_string(nonce));
     std::filesystem::create_directories(root / "Maps");
+    std::filesystem::create_directories(root / "System");
     std::filesystem::create_directories(root / "Textures");
     WriteSyntheticTexturePackage(root / "Textures" / "SyntheticTex.utx");
+    WriteSyntheticMeshPackage(root / "System" / "MeshPack.u");
     WriteSyntheticActorPackage(root / "Maps" / "SyntheticActors.unr");
 
     std::vector<std::uint8_t> bytes(64, 0);
@@ -575,6 +700,23 @@ int main() {
                      && actor_census.actors[0].has_pre_pivot
                      && !actor_census.actors[0].hidden,
                  "actor mesh reference, scale, pivot and bool properties should decode");
+    const auto mesh_package = hp2::LoadPackageIndex(root / "System" / "MeshPack.u");
+    const auto decoded_mesh = hp2::LoadVertexMeshExport(mesh_package, 0);
+    ok &= Expect(decoded_mesh.valid && decoded_mesh.vertices.size() == 3
+                     && decoded_mesh.triangles.size() == 1
+                     && decoded_mesh.frame_vertices == 3
+                     && decoded_mesh.animation_frames == 1,
+                 "UE1 Mesh reference-pose geometry should decode");
+    const auto actor_mesh_scene = hp2::LoadDirectActorMeshes(root, actor_package, actor_census);
+    ok &= Expect(actor_mesh_scene.valid && actor_mesh_scene.candidate_instances == 1
+                     && actor_mesh_scene.decoded_mesh_assets == 1
+                     && actor_mesh_scene.decoded_mesh_instances == 1
+                     && actor_mesh_scene.source_triangles == 1
+                     && actor_mesh_scene.triangles.size() == 1,
+                 "direct actor Mesh references should resolve and receive the actor transform");
+    ok &= Expect(std::isfinite(actor_mesh_scene.triangles[0].points[0].x)
+                     && actor_mesh_scene.assets[0].object_name == "ChairMesh",
+                 "placed actor triangles and mesh asset summaries should remain bounded");
 
     hp2::Runtime runtime;
     runtime.Initialize(root);
