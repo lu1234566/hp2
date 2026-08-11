@@ -6,7 +6,7 @@ if [[ -z "${HP2_DRIVE_URL:-}" ]]; then
     exit 64
 fi
 
-for command_name in gdown iat bsdtar unshield cmake; do
+for command_name in gdown iat bsdtar 7z isoinfo unshield cmake; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "Required command is missing: $command_name" >&2
         exit 69
@@ -43,9 +43,37 @@ mdf_sha256="$(sha256sum "$mdf_path" | cut -d' ' -f1)"
 echo "Converting MDF to ISO..."
 iat "$mdf_path" "$iso_path" >"$report_root/iat.log" 2>&1
 
-echo "Extracting the ISO filesystem..."
-bsdtar -tf "$iso_path" >"$report_root/iso-files.txt"
-bsdtar -xf "$iso_path" -C "$disc_root"
+{
+    echo "MDF bytes: $mdf_bytes"
+    file "$mdf_path"
+    echo "ISO bytes: $(stat -c '%s' "$iso_path")"
+    file "$iso_path"
+    isoinfo -d -i "$mdf_path" || true
+    isoinfo -d -i "$iso_path" || true
+} >"$report_root/image-diagnostics.txt" 2>&1
+
+echo "Extracting the optical-disc filesystem..."
+extracted=false
+if bsdtar -tf "$mdf_path" >"$report_root/mdf-files.txt" 2>"$report_root/bsdtar.log" \
+    && [[ -s "$report_root/mdf-files.txt" ]]; then
+    bsdtar -xf "$mdf_path" -C "$disc_root" >>"$report_root/bsdtar.log" 2>&1
+    extracted=true
+elif bsdtar -tf "$iso_path" >"$report_root/iso-files.txt" 2>>"$report_root/bsdtar.log" \
+    && [[ -s "$report_root/iso-files.txt" ]]; then
+    bsdtar -xf "$iso_path" -C "$disc_root" >>"$report_root/bsdtar.log" 2>&1
+    extracted=true
+fi
+
+if [[ "$extracted" != true ]]; then
+    7z x -y "$mdf_path" "-o$disc_root" >"$report_root/7z.log" 2>&1 || true
+fi
+if ! find "$disc_root" -type f -print -quit | grep -q .; then
+    7z x -y "$iso_path" "-o$disc_root" >>"$report_root/7z.log" 2>&1 || true
+fi
+if ! find "$disc_root" -type f -print -quit | grep -q .; then
+    echo "No files could be extracted from either MDF or converted ISO." >&2
+    exit 65
+fi
 
 cab_count=0
 while IFS= read -r -d '' cab_path; do
