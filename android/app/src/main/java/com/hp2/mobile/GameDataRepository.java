@@ -36,12 +36,14 @@ final class GameDataRepository {
         final int candidates;
         final int validPackages;
         final int maps;
+        final boolean duel10;
         final long bytes;
 
-        ScanResult(int candidates, int validPackages, int maps, long bytes) {
+        ScanResult(int candidates, int validPackages, int maps, boolean duel10, long bytes) {
             this.candidates = candidates;
             this.validPackages = validPackages;
             this.maps = maps;
+            this.duel10 = duel10;
             this.bytes = bytes;
         }
 
@@ -115,9 +117,9 @@ final class GameDataRepository {
         try {
             final MutableScan scan = new MutableScan();
             scanDirectory(gameRoot(), scan);
-            return new ScanResult(scan.candidates, scan.valid, scan.maps, scan.bytes);
+            return new ScanResult(scan.candidates, scan.valid, scan.maps, scan.duel10, scan.bytes);
         } catch (IOException error) {
-            return new ScanResult(0, 0, 0, 0);
+            return new ScanResult(0, 0, 0, false, 0);
         }
     }
 
@@ -142,6 +144,9 @@ final class GameDataRepository {
             }
             if (hasValidPackageHeader(child)) {
                 ++scan.valid;
+                if ("duel10.unr".equalsIgnoreCase(child.getName())) {
+                    scan.duel10 = true;
+                }
             }
         }
     }
@@ -467,6 +472,7 @@ final class GameDataRepository {
         int candidates;
         int valid;
         int maps;
+        boolean duel10;
         long bytes;
     }
 

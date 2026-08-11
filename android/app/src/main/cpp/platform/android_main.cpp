@@ -1,4 +1,5 @@
 #include "hp2/runtime.h"
+#include "hp2/ue_model.h"
 
 #include <game-activity/GameActivity.h>
 #include <game-activity/native_app_glue/android_native_app_glue.h>
@@ -12,10 +13,14 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <optional>
+#include <string>
+#include <vector>
 
 #define LOG_TAG "HP2Engine"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -75,8 +80,84 @@ std::optional<hp2::Button> MapButton(int key_code) {
     }
 }
 
+std::optional<std::filesystem::path> FindMap(
+    const std::filesystem::path& root,
+    const std::string& preferred_name
+) {
+    std::error_code error_code;
+    if (!std::filesystem::is_directory(root, error_code)) {
+        return std::nullopt;
+    }
+    const auto options = std::filesystem::directory_options::skip_permission_denied;
+    std::filesystem::recursive_directory_iterator iterator(root, options, error_code);
+    const std::filesystem::recursive_directory_iterator end;
+    while (iterator != end) {
+        if (error_code) {
+            error_code.clear();
+            iterator.increment(error_code);
+            continue;
+        }
+        if (iterator->is_regular_file(error_code) && !error_code) {
+            std::string filename = iterator->path().filename().string();
+            std::transform(filename.begin(), filename.end(), filename.begin(), [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+            if (filename == preferred_name) {
+                return iterator->path();
+            }
+        }
+        iterator.increment(error_code);
+    }
+    return std::nullopt;
+}
+
 class BootstrapRenderer {
 public:
+    void SetGeometry(const hp2::ModelGeometry& geometry) {
+        mesh_vertices_.clear();
+        if (!geometry.valid || geometry.triangles.empty()) {
+            if (ready()) {
+                UploadMesh();
+            }
+            return;
+        }
+
+        const hp2::Vec3 center = {
+            (geometry.bounds_min.x + geometry.bounds_max.x) * 0.5f,
+            (geometry.bounds_min.y + geometry.bounds_max.y) * 0.5f,
+            (geometry.bounds_min.z + geometry.bounds_max.z) * 0.5f
+        };
+        const float extent_x = geometry.bounds_max.x - geometry.bounds_min.x;
+        const float extent_y = geometry.bounds_max.y - geometry.bounds_min.y;
+        const float extent_z = geometry.bounds_max.z - geometry.bounds_min.z;
+        const float largest_extent = std::max({extent_x, extent_y, extent_z});
+        if (!std::isfinite(largest_extent) || largest_extent <= 0.0f) {
+            return;
+        }
+        const float scale = 1.75f / largest_extent;
+        mesh_vertices_.reserve(geometry.triangles.size() * 9u);
+        for (const hp2::BspTriangle& triangle : geometry.triangles) {
+            const std::array<std::uint32_t, 3> indices = {triangle.a, triangle.b, triangle.c};
+            for (const std::uint32_t point_index : indices) {
+                if (point_index >= geometry.points.size()) {
+                    mesh_vertices_.clear();
+                    return;
+                }
+                const hp2::Vec3& point = geometry.points[point_index];
+                mesh_vertices_.push_back((point.x - center.x) * scale);
+                mesh_vertices_.push_back((point.y - center.y) * scale);
+                mesh_vertices_.push_back((point.z - center.z) * scale);
+            }
+        }
+        if (ready()) {
+            UploadMesh();
+        }
+    }
+
+    bool has_geometry() const {
+        return mesh_vertex_count_ > 0;
+    }
+
     bool Initialize(ANativeWindow* window) {
         if (window == nullptr) {
             return false;
@@ -129,13 +210,23 @@ public:
         eglQuerySurface(display_, surface_, EGL_WIDTH, &width_);
         eglQuerySurface(display_, surface_, EGL_HEIGHT, &height_);
         eglSwapInterval(display_, 1);
-        LOGI("G0 renderer ready: %dx%d, %s", width_, height_,
-             reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+        if (!InitializePipeline()) {
+            LOGE("G2 mesh pipeline initialization failed");
+            Shutdown();
+            return false;
+        }
+        UploadMesh();
+        LOGI("G2 renderer ready: %dx%d, %s, mesh_vertices=%d", width_, height_,
+             reinterpret_cast<const char*>(glGetString(GL_VERSION)), mesh_vertex_count_);
         return true;
     }
 
     void Shutdown() {
         if (display_ != EGL_NO_DISPLAY) {
+            if (context_ != EGL_NO_CONTEXT && surface_ != EGL_NO_SURFACE) {
+                eglMakeCurrent(display_, surface_, surface_, context_);
+                DestroyPipeline();
+            }
             eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
             if (context_ != EGL_NO_CONTEXT) {
                 eglDestroyContext(display_, context_);
@@ -150,6 +241,7 @@ public:
         context_ = EGL_NO_CONTEXT;
         width_ = 0;
         height_ = 0;
+        mesh_vertex_count_ = 0;
     }
 
     bool ready() const {
@@ -162,13 +254,23 @@ public:
         }
 
         glDisable(GL_SCISSOR_TEST);
-        switch (runtime.status()) {
-            case hp2::BootStatus::WaitingForController: glClearColor(0.025f, 0.055f, 0.12f, 1.0f); break;
-            case hp2::BootStatus::MissingGameData: glClearColor(0.12f, 0.045f, 0.025f, 1.0f); break;
-            case hp2::BootStatus::IncompatibleGameData: glClearColor(0.10f, 0.025f, 0.12f, 1.0f); break;
-            case hp2::BootStatus::PackageProbeReady: glClearColor(0.018f, 0.10f, 0.075f, 1.0f); break;
+        glViewport(0, 0, width_, height_);
+        if (has_geometry()) {
+            glClearColor(0.015f, 0.025f, 0.060f, 1.0f);
+        } else {
+            switch (runtime.status()) {
+                case hp2::BootStatus::WaitingForController: glClearColor(0.025f, 0.055f, 0.12f, 1.0f); break;
+                case hp2::BootStatus::MissingGameData: glClearColor(0.12f, 0.045f, 0.025f, 1.0f); break;
+                case hp2::BootStatus::IncompatibleGameData: glClearColor(0.10f, 0.025f, 0.12f, 1.0f); break;
+                case hp2::BootStatus::PackageProbeReady: glClearColor(0.018f, 0.10f, 0.075f, 1.0f); break;
+            }
         }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        if (has_geometry()) {
+            DrawGeometry(seconds, runtime.analog().right_x);
+        }
+        glDisable(GL_DEPTH_TEST);
 
         const int margin = std::max(16, width_ / 32);
         const int gap = std::max(8, width_ / 100);
@@ -191,11 +293,13 @@ public:
                      ? Color{0.18f, 0.70f, 0.45f, 1.0f}
                      : Color{0.28f, 0.28f, 0.32f, 1.0f});
 
-        const int marker_size = std::max(24, height_ / 14);
-        const int center_x = width_ / 2 + static_cast<int>(runtime.analog().left_x * width_ * 0.16f);
-        const int center_y = height_ / 2 - static_cast<int>(runtime.analog().left_y * height_ * 0.16f);
-        DrawRect(center_x - marker_size / 2, center_y - marker_size / 2,
-                 marker_size, marker_size, {0.86f, 0.68f, 0.28f, 1.0f});
+        if (!has_geometry()) {
+            const int marker_size = std::max(24, height_ / 14);
+            const int center_x = width_ / 2 + static_cast<int>(runtime.analog().left_x * width_ * 0.16f);
+            const int center_y = height_ / 2 - static_cast<int>(runtime.analog().left_y * height_ * 0.16f);
+            DrawRect(center_x - marker_size / 2, center_y - marker_size / 2,
+                     marker_size, marker_size, {0.86f, 0.68f, 0.28f, 1.0f});
+        }
 
         glDisable(GL_SCISSOR_TEST);
         eglSwapBuffers(display_, surface_);
@@ -208,6 +312,159 @@ private:
         float blue;
         float alpha;
     };
+
+    static GLuint CompileShader(GLenum type, const char* source) {
+        const GLuint shader = glCreateShader(type);
+        glShaderSource(shader, 1, &source, nullptr);
+        glCompileShader(shader);
+        GLint compiled = GL_FALSE;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+        if (compiled == GL_TRUE) {
+            return shader;
+        }
+        std::array<char, 1024> log{};
+        glGetShaderInfoLog(shader, static_cast<GLsizei>(log.size()), nullptr, log.data());
+        LOGE("Shader compilation failed: %s", log.data());
+        glDeleteShader(shader);
+        return 0;
+    }
+
+    bool InitializePipeline() {
+        static constexpr char kVertexShader[] = R"glsl(#version 300 es
+layout(location = 0) in vec3 aPosition;
+uniform float uYaw;
+uniform float uAspect;
+out float vHeight;
+void main() {
+    float c = cos(uYaw);
+    float s = sin(uYaw);
+    vec3 rotated = vec3(
+        c * aPosition.x - s * aPosition.y,
+        s * aPosition.x + c * aPosition.y,
+        aPosition.z
+    );
+    float x = rotated.x / max(uAspect, 1.0);
+    float y = rotated.z * 0.82 - rotated.y * 0.28;
+    gl_Position = vec4(x * 0.92, y * 0.92, rotated.y * 0.35, 1.0);
+    vHeight = clamp(aPosition.z * 0.55 + 0.5, 0.0, 1.0);
+}
+)glsl";
+        static constexpr char kFragmentShader[] = R"glsl(#version 300 es
+precision mediump float;
+in float vHeight;
+out vec4 outColor;
+void main() {
+    vec3 low = vec3(0.10, 0.42, 0.34);
+    vec3 high = vec3(0.86, 0.69, 0.29);
+    outColor = vec4(mix(low, high, vHeight), 1.0);
+}
+)glsl";
+
+        const GLuint vertex_shader = CompileShader(GL_VERTEX_SHADER, kVertexShader);
+        const GLuint fragment_shader = CompileShader(GL_FRAGMENT_SHADER, kFragmentShader);
+        if (vertex_shader == 0 || fragment_shader == 0) {
+            if (vertex_shader != 0) {
+                glDeleteShader(vertex_shader);
+            }
+            if (fragment_shader != 0) {
+                glDeleteShader(fragment_shader);
+            }
+            return false;
+        }
+
+        program_ = glCreateProgram();
+        glAttachShader(program_, vertex_shader);
+        glAttachShader(program_, fragment_shader);
+        glLinkProgram(program_);
+        glDeleteShader(vertex_shader);
+        glDeleteShader(fragment_shader);
+
+        GLint linked = GL_FALSE;
+        glGetProgramiv(program_, GL_LINK_STATUS, &linked);
+        if (linked != GL_TRUE) {
+            std::array<char, 1024> log{};
+            glGetProgramInfoLog(program_, static_cast<GLsizei>(log.size()), nullptr, log.data());
+            LOGE("Shader program link failed: %s", log.data());
+            glDeleteProgram(program_);
+            program_ = 0;
+            return false;
+        }
+        yaw_uniform_ = glGetUniformLocation(program_, "uYaw");
+        aspect_uniform_ = glGetUniformLocation(program_, "uAspect");
+        return yaw_uniform_ >= 0 && aspect_uniform_ >= 0;
+    }
+
+    void DestroyPipeline() {
+        if (vertex_buffer_ != 0) {
+            glDeleteBuffers(1, &vertex_buffer_);
+            vertex_buffer_ = 0;
+        }
+        if (vertex_array_ != 0) {
+            glDeleteVertexArrays(1, &vertex_array_);
+            vertex_array_ = 0;
+        }
+        if (program_ != 0) {
+            glDeleteProgram(program_);
+            program_ = 0;
+        }
+        mesh_vertex_count_ = 0;
+        yaw_uniform_ = -1;
+        aspect_uniform_ = -1;
+    }
+
+    void UploadMesh() {
+        if (vertex_buffer_ != 0) {
+            glDeleteBuffers(1, &vertex_buffer_);
+            vertex_buffer_ = 0;
+        }
+        if (vertex_array_ != 0) {
+            glDeleteVertexArrays(1, &vertex_array_);
+            vertex_array_ = 0;
+        }
+        mesh_vertex_count_ = 0;
+        if (program_ == 0 || mesh_vertices_.empty()) {
+            return;
+        }
+
+        const std::size_t count = mesh_vertices_.size() / 3u;
+        if (count > static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())) {
+            LOGE("G2 mesh has too many vertices for OpenGL ES");
+            return;
+        }
+        glGenVertexArrays(1, &vertex_array_);
+        glGenBuffers(1, &vertex_buffer_);
+        glBindVertexArray(vertex_array_);
+        glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(mesh_vertices_.size() * sizeof(float)),
+                     mesh_vertices_.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+        mesh_vertex_count_ = static_cast<GLsizei>(count);
+        LOGI("G2 BSP mesh uploaded: vertices=%d triangles=%d",
+             mesh_vertex_count_, mesh_vertex_count_ / 3);
+    }
+
+    void DrawGeometry(float seconds, float controller_yaw) {
+        if (program_ == 0 || vertex_array_ == 0 || mesh_vertex_count_ <= 0) {
+            return;
+        }
+        glDisable(GL_SCISSOR_TEST);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDisable(GL_CULL_FACE);
+        glUseProgram(program_);
+        glUniform1f(yaw_uniform_, seconds * 0.075f + controller_yaw * 0.85f);
+        glUniform1f(aspect_uniform_, height_ > 0
+            ? static_cast<float>(width_) / static_cast<float>(height_)
+            : 1.0f);
+        glBindVertexArray(vertex_array_);
+        glDrawArrays(GL_TRIANGLES, 0, mesh_vertex_count_);
+        glBindVertexArray(0);
+        glUseProgram(0);
+    }
 
     void DrawRect(int x, int y, int width, int height, const Color& color) {
         if (width <= 0 || height <= 0) {
@@ -224,6 +481,13 @@ private:
     EGLContext context_ = EGL_NO_CONTEXT;
     EGLint width_ = 0;
     EGLint height_ = 0;
+    GLuint program_ = 0;
+    GLuint vertex_array_ = 0;
+    GLuint vertex_buffer_ = 0;
+    GLint yaw_uniform_ = -1;
+    GLint aspect_uniform_ = -1;
+    GLsizei mesh_vertex_count_ = 0;
+    std::vector<float> mesh_vertices_;
 };
 
 class AndroidShell {
@@ -235,6 +499,7 @@ public:
         }
         game_root_ = std::filesystem::path(base == nullptr ? "." : base) / "game";
         runtime_.Initialize(game_root_);
+        LoadGeometry();
         LogCatalog();
     }
 
@@ -306,6 +571,7 @@ private:
             runtime_.SetButton(*button, pressed);
             if (*button == hp2::Button::Start && pressed) {
                 runtime_.Initialize(game_root_);
+                LoadGeometry();
                 LogCatalog();
             }
         }
@@ -362,6 +628,26 @@ private:
         }
     }
 
+    void LoadGeometry() {
+        const auto map_path = FindMap(game_root_, "duel10.unr");
+        if (!map_path.has_value()) {
+            geometry_ = {};
+            renderer_.SetGeometry(geometry_);
+            LOGI("G2 Duel10.unr is not installed; keeping diagnostic renderer");
+            return;
+        }
+        geometry_ = hp2::LoadPrimaryModelGeometry(*map_path);
+        renderer_.SetGeometry(geometry_);
+        if (geometry_.valid) {
+            LOGI("G2 BSP ready: map=%s model=%s points=%zu nodes=%zu triangles=%zu",
+                 map_path->c_str(), geometry_.object_name.c_str(), geometry_.points.size(),
+                 geometry_.nodes.size(), geometry_.triangles.size());
+        } else {
+            LOGE("G2 BSP decode failed: map=%s error=%s",
+                 map_path->c_str(), geometry_.error.c_str());
+        }
+    }
+
     void LogCatalog() const {
         const auto status = hp2::ToString(runtime_.status());
         LOGI("G0 root=%s candidates=%zu valid=%zu status=%.*s",
@@ -372,6 +658,7 @@ private:
     android_app* app_ = nullptr;
     std::filesystem::path game_root_;
     hp2::Runtime runtime_;
+    hp2::ModelGeometry geometry_;
     BootstrapRenderer renderer_;
 };
 

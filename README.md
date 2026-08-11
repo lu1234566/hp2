@@ -14,8 +14,9 @@ and gameplay-touch layers.
 
 G0 and G1 are complete. The native shell was confirmed on a Samsung Galaxy
 A57, and the owner's original disc yielded 107/107 structurally valid Unreal
-packages. G2 now reads the full name/import/export index of a real HP2 map;
-rendering its native BSP geometry is the remaining acceptance criterion.
+packages. G2b now decodes the primary `Duel10.unr` BSP model into 1,389 valid
+triangles and submits that mesh to OpenGL ES 3. Device confirmation of the
+real-map frame is the remaining acceptance criterion.
 
 The current foundation provides:
 
@@ -30,7 +31,8 @@ The current foundation provides:
 - touch events filtered before they reach PortCore gameplay;
 - recursive UE package-summary validation;
 - a UE1/UE2 package-index reader for compact names, imports and exports;
-- a metadata-only `hp2_map_probe` targeting `Duel10.unr` for G2a;
+- a clean-room `hp2_map_probe` that decodes `Duel10.unr` while emitting only
+  metadata and aggregate geometry counts;
 - GitHub Actions builds, so Google Colab is not part of the workflow.
 
 The runtime diagnostic screen uses four bars, from left to right:
@@ -40,8 +42,10 @@ The runtime diagnostic screen uses four bars, from left to right:
 3. package candidates were found;
 4. at least one package summary passed structural validation.
 
-The gold square follows the left stick. Press **Start** to rescan after an
-import. Touch is used only by the launcher, never as gameplay input.
+When a valid `Duel10.unr` is installed, the runtime draws its normalized BSP
+mesh behind the diagnostic bars; the right stick changes its viewing angle.
+The gold square remains only as the no-map fallback. Press **Start** to rescan
+after an import. Touch is used only by the launcher, never as gameplay input.
 
 ## Install original game data
 
@@ -70,9 +74,10 @@ The original MDF is processed in an ephemeral GitHub Actions runner. G1 found
 42 maps, 53 texture packages, 11 code/content packages and one audio bank; all
 107 package summaries passed structural validation.
 
-G2a additionally generates a metadata-only object index for `Duel10.unr`,
-including resolved `Model`, `Polys` and `Level` candidates. The image and all
-extracted files are deleted at the end of the run.
+G2b additionally decodes the largest `Model` payload in `Duel10.unr` and emits
+only aggregate metadata: `Model314` contains 764 points, 455 BSP nodes, 252
+surfaces, 8,975 BSP vertices and 1,389 valid triangles. The image, map payload
+and all extracted files are deleted at the end of the run.
 
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
@@ -81,7 +86,7 @@ extracted files are deleted at the end of the run.
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G2-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G2b-dev-debug` from the workflow run's
 **Artifacts** section.
 
 For a local Android build, install JDK 17, Gradle 9.4.1 and the Android
@@ -125,7 +130,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 |---|---|---|
 | G0 | Native Android shell, gamepad path and package-summary probe | PASS |
 | G1 | Exact HP2 package/version catalog from the owner's original media | PASS — 107/107 packages |
-| G2 | First real HP2 map geometry | IN PROGRESS — package object index implemented |
+| G2 | First real HP2 map geometry | DEVICE TEST — 1,389 real BSP triangles decoded |
 | G3 | UVs and real textures | Pending |
 | G4 | Lightmaps and recognizable room | Pending |
 | G5 | Actors, meshes and animation | Pending |
