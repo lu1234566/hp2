@@ -30,7 +30,7 @@ jobs:
       - name: Install disc inspection tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes iat libarchive-tools unshield
+          sudo apt-get install --yes genisoimage iat libarchive-tools p7zip-full unshield
           python3 -m pip install --disable-pip-version-check gdown==5.2.0
       - name: Download, extract and probe original media
         run: bash scripts/probe-original-disc.sh .local/hp2-disc-report
