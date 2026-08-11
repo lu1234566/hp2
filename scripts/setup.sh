@@ -14,7 +14,7 @@ fi
 
 yes | "$SDK_MANAGER" --licenses >/dev/null || true
 "$SDK_MANAGER" \
-    "platforms;android-37" \
+    "platforms;android-36" \
     "build-tools;36.0.0" \
     "platform-tools" \
     "ndk;28.2.13676358" \
