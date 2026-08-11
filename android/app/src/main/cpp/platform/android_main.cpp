@@ -133,6 +133,8 @@ public:
         light_map_height_ = 0;
         bsp_triangle_count_ = 0;
         actor_triangle_count_ = 0;
+        actor_focus_available_ = false;
+        actor_focus_enabled_ = false;
 
         std::unordered_map<std::int32_t, std::size_t> material_slots;
         for (hp2::DecodedTexture& texture : texture_set.textures) {
@@ -296,6 +298,22 @@ public:
             }
             actor_groups[group].push_back(&triangle);
         }
+        hp2::Vec3 actor_center{};
+        float actor_scale = 0.0f;
+        if (actor_meshes.bounds_valid) {
+            actor_center = {
+                (actor_meshes.bounds_min.x + actor_meshes.bounds_max.x) * 0.5f,
+                (actor_meshes.bounds_min.y + actor_meshes.bounds_max.y) * 0.5f,
+                (actor_meshes.bounds_min.z + actor_meshes.bounds_max.z) * 0.5f
+            };
+            const float actor_extent_x = actor_meshes.bounds_max.x - actor_meshes.bounds_min.x;
+            const float actor_extent_y = actor_meshes.bounds_max.y - actor_meshes.bounds_min.y;
+            const float actor_extent_z = actor_meshes.bounds_max.z - actor_meshes.bounds_min.z;
+            const float actor_extent = std::max({actor_extent_x, actor_extent_y, actor_extent_z});
+            if (std::isfinite(actor_extent) && actor_extent > 0.0f) {
+                actor_scale = 1.55f / actor_extent;
+            }
+        }
         for (std::size_t group = 0; group < actor_groups.size(); ++group) {
             if (actor_groups[group].empty()) {
                 continue;
@@ -324,7 +342,35 @@ public:
                 texture_slot
             });
             actor_triangle_count_ += vertex_count / 3u;
+
+            if (actor_scale > 0.0f) {
+                const std::size_t focus_first_vertex = mesh_vertices_.size() / 9u;
+                for (const hp2::ActorMeshTriangle* triangle : actor_groups[group]) {
+                    for (std::size_t corner = 0; corner < triangle->points.size(); ++corner) {
+                        const hp2::Vec3& point = triangle->points[corner];
+                        mesh_vertices_.push_back((point.x - actor_center.x) * actor_scale);
+                        mesh_vertices_.push_back((point.y - actor_center.y) * actor_scale);
+                        mesh_vertices_.push_back((point.z - actor_center.z) * actor_scale);
+                        mesh_vertices_.push_back(triangle->texture_coordinates[corner].u);
+                        mesh_vertices_.push_back(triangle->texture_coordinates[corner].v);
+                        mesh_vertices_.push_back(0.0f);
+                        mesh_vertices_.push_back(0.0f);
+                        mesh_vertices_.push_back(texture_slot >= 0 ? 1.0f : 0.0f);
+                        mesh_vertices_.push_back(0.0f);
+                    }
+                }
+                const std::size_t focus_vertex_count =
+                    mesh_vertices_.size() / 9u - focus_first_vertex;
+                draw_batches_.push_back({
+                    static_cast<GLint>(focus_first_vertex),
+                    static_cast<GLsizei>(focus_vertex_count),
+                    texture_slot,
+                    true
+                });
+                actor_focus_available_ = actor_focus_available_ || focus_vertex_count > 0;
+            }
         }
+        actor_focus_enabled_ = actor_focus_available_;
         if (ready()) {
             UploadMesh();
             UploadTextures();
@@ -333,6 +379,13 @@ public:
 
     bool has_geometry() const {
         return mesh_vertex_count_ > 0;
+    }
+
+    void ToggleActorFocus() {
+        if (actor_focus_available_) {
+            actor_focus_enabled_ = !actor_focus_enabled_;
+            LOGI("G5 actor focus: %s", actor_focus_enabled_ ? "enabled" : "world");
+        }
     }
 
     bool Initialize(ANativeWindow* window) {
@@ -503,6 +556,7 @@ private:
         GLint first = 0;
         GLsizei count = 0;
         std::int32_t texture_slot = -1;
+        bool actor_focus_only = false;
     };
 
     static GLuint CompileShader(GLenum type, const char* source) {
@@ -772,6 +826,9 @@ void main() {
         glUniform1i(light_map_uniform_, 1);
         glBindVertexArray(vertex_array_);
         for (const DrawBatch& batch : draw_batches_) {
+            if (batch.actor_focus_only != actor_focus_enabled_) {
+                continue;
+            }
             GLuint texture = fallback_texture_id_;
             if (batch.texture_slot >= 0
                 && static_cast<std::size_t>(batch.texture_slot) < texture_ids_.size()) {
@@ -823,6 +880,8 @@ void main() {
     GLsizei light_map_height_ = 0;
     std::size_t bsp_triangle_count_ = 0;
     std::size_t actor_triangle_count_ = 0;
+    bool actor_focus_available_ = false;
+    bool actor_focus_enabled_ = false;
 };
 
 class AndroidShell {
@@ -904,6 +963,9 @@ private:
             }
             const bool pressed = event.action == AKEY_EVENT_ACTION_DOWN;
             runtime_.SetButton(*button, pressed);
+            if (*button == hp2::Button::A && pressed) {
+                renderer_.ToggleActorFocus();
+            }
             if (*button == hp2::Button::Start && pressed) {
                 runtime_.Initialize(game_root_);
                 LoadGeometry();

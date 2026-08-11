@@ -14,11 +14,13 @@ and gameplay-touch layers.
 
 G0 through G4 are complete. On 2026-08-11 the Galaxy A57 visibly confirmed the
 recognizable `Duel10` room with all 33 decodable BSP materials and the static
-visibility-lightmap atlas, closing G4. G5a now adds the separate object path:
+visibility-lightmap atlas, closing G4. G5a added the separate object path:
 it reads the `ULevel` actor array, bounded `StateFrame` and tagged transform/
 mesh properties, decodes directly referenced UE1 `Mesh`, `LodMesh` and
 `SkeletalMesh` reference-pose geometry, and places the first duelist in the
-BSP world. No original asset is included in Git or the APK.
+BSP world. The G5b validation view now starts focused on that same actor;
+controller **A** alternates between the enlarged inspection and complete-room
+views. No original asset is included in Git or the APK.
 
 The current foundation provides:
 
@@ -117,6 +119,13 @@ materials with no failures. The other direct reference is the camera's utility
 rendered world. These are metadata counts only—the vertices and pixels never
 leave the ephemeral private runner.
 
+The first G5a device capture preserved the room but did not make the actor
+recognizable. A follow-up bounds probe confirmed that the actor was not missing
+or outside the map: its placed bounds are approximately 23×56×88 world units
+inside a BSP whose largest span is 3,487 units. At the full-room scale it uses
+only about 2.5% of that span. G5b therefore adds a controller-only focus view
+without changing the decoded geometry or its world placement.
+
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
 - [G2 format notes](docs/G2_FORMAT_NOTES.md)
@@ -127,7 +136,7 @@ leave the ephemeral private runner.
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G5a-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G5b-dev-debug` from the workflow run's
 **Artifacts** section.
 
 Development APKs from G3a onward use the checked-in, non-production development
@@ -180,7 +189,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
 | G4 | Lightmaps and recognizable room | PASS — visibly confirmed on Galaxy A57 |
-| G5 | Actors, meshes and animation | IN PROGRESS — G5a reference-pose actor awaiting device validation |
+| G5 | Actors, meshes and animation | IN PROGRESS — G5b focused reference-pose validation |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
 | G8 | Android performance and full controller validation | Pending |

@@ -55,5 +55,22 @@ Placement applies mesh origin, mesh scale and rotation origin, then actor
 version-79 package verifies the external package reference, packed mesh
 vertices, UVs, triangle and transform path without using any original asset.
 
-G5 is not complete at G5a: class-default decoration meshes, skeletal animation,
+## G5b focused device validation
+
+The G5a Galaxy A57 capture did not visually distinguish the duelist from the
+completed G4 room. The metadata-only follow-up measured the placed actor at
+`[2269.37, -863.14, -336.03]` through `[2292.28, -806.68, -248.52]`. Those
+bounds are inside the BSP bounds, so the actor was neither missing nor clipped
+outside the map. Its largest extent is about 88 world units, while the BSP's
+largest extent is 3,487 units; the full-room diagnostic necessarily reduces it
+to only a few dozen screen pixels.
+
+G5b duplicates the already transformed actor triangles only inside the local
+render buffer and normalizes that duplicate around the measured actor bounds.
+The default device view draws only this enlarged inspection copy. Controller
+button **A** alternates to the unchanged world view, where the original placed
+instance remains depth-tested against the BSP. Both views use the same 616
+triangles, UVs and two decoded materials; no asset data is added to the APK.
+
+G5 is not complete at G5b: class-default decoration meshes, skeletal animation,
 collision and scripted behavior remain separate acceptance steps.
