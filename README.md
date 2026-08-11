@@ -14,10 +14,11 @@ and gameplay-touch layers.
 
 G0 through G4 are complete. On 2026-08-11 the Galaxy A57 visibly confirmed the
 recognizable `Duel10` room with all 33 decodable BSP materials and the static
-visibility-lightmap atlas, closing G4. G5a now starts the separate object path:
+visibility-lightmap atlas, closing G4. G5a now adds the separate object path:
 it reads the `ULevel` actor array, bounded `StateFrame` and tagged transform/
-mesh properties so decorative meshes can be placed in the BSP world. No
-original asset is included in Git or the APK.
+mesh properties, decodes directly referenced UE1 `Mesh`, `LodMesh` and
+`SkeletalMesh` reference-pose geometry, and places the first duelist in the
+BSP world. No original asset is included in Git or the APK.
 
 The current foundation provides:
 
@@ -40,6 +41,8 @@ The current foundation provides:
   masks;
 - a bounded UE1 `ULevel` actor/`StateFrame` census for transforms and direct
   mesh references;
+- bounded UE1 `Mesh`, `LodMesh` and `SkeletalMesh` reference-pose readers with
+  actor transforms and original mesh-material resolution;
 - GitHub Actions builds, so Google Colab is not part of the workflow.
 
 The runtime diagnostic screen uses four bars, from left to right:
@@ -105,6 +108,15 @@ with its original wall, floor, trim and beam textures plus visible static light
 variation. That device evidence closes G4 and is intentionally recorded as
 metadata rather than committing a screenshot of copyrighted game content.
 
+The G5a private probe parsed all 274 non-null `Duel10` actors with zero actor
+failures. Two actors carry direct mesh references. The visible duelist resolves
+to `HPModels.skhp2_genmale1Mesh`, a `SkeletalMesh` whose reference pose has 291
+vertices, 616 triangles and 135 bones. All 616 triangles resolved to two decoded
+materials with no failures. The other direct reference is the camera's utility
+`LodMesh`; it is decoded for format coverage but deliberately excluded from the
+rendered world. These are metadata counts only—the vertices and pixels never
+leave the ephemeral private runner.
+
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
 - [G2 format notes](docs/G2_FORMAT_NOTES.md)
@@ -115,7 +127,7 @@ metadata rather than committing a screenshot of copyrighted game content.
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G4a-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G5a-dev-debug` from the workflow run's
 **Artifacts** section.
 
 Development APKs from G3a onward use the checked-in, non-production development
@@ -168,7 +180,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
 | G4 | Lightmaps and recognizable room | PASS — visibly confirmed on Galaxy A57 |
-| G5 | Actors, meshes and animation | IN PROGRESS — G5a actor census |
+| G5 | Actors, meshes and animation | IN PROGRESS — G5a reference-pose actor awaiting device validation |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
 | G8 | Android performance and full controller validation | Pending |

@@ -94,7 +94,7 @@ public final class LauncherActivity extends AppCompatActivity {
 
         content.addView(space(14));
         final LinearLayout hero = card(COLOR_GREEN_DARK, 26);
-        final TextView gate = text("G4a · texturas e lightmaps em preparação", 14, COLOR_GREEN, Typeface.BOLD);
+        final TextView gate = text("G5a · ator e SkeletalMesh em preparação", 14, COLOR_GREEN, Typeface.BOLD);
         hero.addView(gate);
         hero.addView(space(10));
         dataState = text("Verificando dados…", 24, COLOR_TEXT, Typeface.BOLD);
@@ -151,7 +151,9 @@ public final class LauncherActivity extends AppCompatActivity {
         content.addView(space(10));
         content.addView(gateCard("G3", "UV + primeira textura no Galaxy A57", "PASS", COLOR_GREEN));
         content.addView(space(10));
-        content.addView(gateCard("G4", "Texturas BSP + máscaras de luz", "EM TESTE", COLOR_GOLD));
+        content.addView(gateCard("G4", "Texturas BSP + máscaras de luz", "PASS", COLOR_GREEN));
+        content.addView(space(10));
+        content.addView(gateCard("G5", "Ator + pose-base SkeletalMesh", "EM TESTE", COLOR_GOLD));
 
         content.addView(space(20));
         final Button appSettings = compactButton("Abrir informações do app");
@@ -221,7 +223,7 @@ public final class LauncherActivity extends AppCompatActivity {
         repository.scanAsync(result -> runOnUiThread(() -> {
             if (result.canLaunch()) {
                 dataState.setText(result.duel10
-                    ? "Duel10 pronto para teste G4a"
+                    ? "Duel10 pronto para teste G5a"
                     : "Dados válidos; Duel10 ausente");
                 packageState.setText(String.format(Locale.ROOT,
                     "%d/%d pacotes válidos · %d mapas · %s",
@@ -231,7 +233,7 @@ public final class LauncherActivity extends AppCompatActivity {
                 packageState.setText("0/107 pacotes · importe sua instalação original");
             }
             launchButton.setText(result.duel10
-                ? "Testar sala iluminada (Duel10)"
+                ? "Testar duelista em pose-base (Duel10)"
                 : (result.canLaunch() ? "Abrir runtime nativo" : "Abrir diagnóstico G0"));
             setBusy(false, null);
         }));

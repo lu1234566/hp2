@@ -1,5 +1,7 @@
 #include "hp2/runtime.h"
+#include "hp2/ue_actor.h"
 #include "hp2/ue_lightmap.h"
+#include "hp2/ue_mesh.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_texture.h"
 
@@ -120,7 +122,8 @@ public:
     void SetScene(
         const hp2::ModelGeometry& geometry,
         hp2::DecodedTextureSet texture_set,
-        hp2::LightMapAtlas light_maps
+        hp2::LightMapAtlas light_maps,
+        hp2::ActorMeshScene actor_meshes
     ) {
         mesh_vertices_.clear();
         draw_batches_.clear();
@@ -128,6 +131,8 @@ public:
         light_map_pixels_.clear();
         light_map_width_ = 0;
         light_map_height_ = 0;
+        bsp_triangle_count_ = 0;
+        actor_triangle_count_ = 0;
 
         std::unordered_map<std::int32_t, std::size_t> material_slots;
         for (hp2::DecodedTexture& texture : texture_set.textures) {
@@ -138,6 +143,23 @@ public:
             }
             const std::size_t slot = textures_.size();
             material_slots.emplace(texture.map_material_index, slot);
+            textures_.push_back({
+                texture.width,
+                texture.height,
+                std::move(texture.rgba_pixels)
+            });
+        }
+        std::vector<std::int32_t> actor_material_slots(
+            actor_meshes.materials.size(), -1
+        );
+        for (std::size_t index = 0; index < actor_meshes.materials.size(); ++index) {
+            hp2::DecodedTexture& texture = actor_meshes.materials[index].texture;
+            if (!texture.valid || texture.width <= 0 || texture.height <= 0
+                || texture.rgba_pixels.size() != static_cast<std::size_t>(texture.width)
+                    * static_cast<std::size_t>(texture.height) * 4u) {
+                continue;
+            }
+            actor_material_slots[index] = static_cast<std::int32_t>(textures_.size());
             textures_.push_back({
                 texture.width,
                 texture.height,
@@ -188,7 +210,9 @@ public:
             groups[group].push_back(&triangle);
         }
 
-        mesh_vertices_.reserve(geometry.triangles.size() * 27u);
+        mesh_vertices_.reserve(
+            (geometry.triangles.size() + actor_meshes.triangles.size()) * 27u
+        );
         for (std::size_t group = 0; group < groups.size(); ++group) {
             if (groups[group].empty()) {
                 continue;
@@ -253,6 +277,54 @@ public:
                 texture_slot
             });
         }
+        bsp_triangle_count_ = geometry.triangles.size();
+
+        std::vector<std::vector<const hp2::ActorMeshTriangle*>> actor_groups(
+            textures_.size() + 1u
+        );
+        for (const hp2::ActorMeshTriangle& triangle : actor_meshes.triangles) {
+            std::size_t group = 0;
+            if (triangle.material_index >= 0
+                && static_cast<std::size_t>(triangle.material_index)
+                    < actor_material_slots.size()) {
+                const std::int32_t texture_slot = actor_material_slots[
+                    static_cast<std::size_t>(triangle.material_index)
+                ];
+                if (texture_slot >= 0) {
+                    group = static_cast<std::size_t>(texture_slot) + 1u;
+                }
+            }
+            actor_groups[group].push_back(&triangle);
+        }
+        for (std::size_t group = 0; group < actor_groups.size(); ++group) {
+            if (actor_groups[group].empty()) {
+                continue;
+            }
+            const std::int32_t texture_slot = group == 0
+                ? -1 : static_cast<std::int32_t>(group - 1u);
+            const std::size_t first_vertex = mesh_vertices_.size() / 9u;
+            for (const hp2::ActorMeshTriangle* triangle : actor_groups[group]) {
+                for (std::size_t corner = 0; corner < triangle->points.size(); ++corner) {
+                    const hp2::Vec3& point = triangle->points[corner];
+                    mesh_vertices_.push_back((point.x - center.x) * scale);
+                    mesh_vertices_.push_back((point.y - center.y) * scale);
+                    mesh_vertices_.push_back((point.z - center.z) * scale);
+                    mesh_vertices_.push_back(triangle->texture_coordinates[corner].u);
+                    mesh_vertices_.push_back(triangle->texture_coordinates[corner].v);
+                    mesh_vertices_.push_back(0.0f);
+                    mesh_vertices_.push_back(0.0f);
+                    mesh_vertices_.push_back(texture_slot >= 0 ? 1.0f : 0.0f);
+                    mesh_vertices_.push_back(0.0f);
+                }
+            }
+            const std::size_t vertex_count = mesh_vertices_.size() / 9u - first_vertex;
+            draw_batches_.push_back({
+                static_cast<GLint>(first_vertex),
+                static_cast<GLsizei>(vertex_count),
+                texture_slot
+            });
+            actor_triangle_count_ += vertex_count / 3u;
+        }
         if (ready()) {
             UploadMesh();
             UploadTextures();
@@ -316,15 +388,16 @@ public:
         eglQuerySurface(display_, surface_, EGL_HEIGHT, &height_);
         eglSwapInterval(display_, 1);
         if (!InitializePipeline()) {
-            LOGE("G4 mesh pipeline initialization failed");
+            LOGE("G5 mesh pipeline initialization failed");
             Shutdown();
             return false;
         }
         UploadMesh();
         UploadTextures();
-        LOGI("G4 renderer ready: %dx%d, %s, mesh_vertices=%d, textures=%zu, lightmap=%dx%d",
+        LOGI("G5 renderer ready: %dx%d, %s, mesh_vertices=%d, bsp=%zu actors=%zu textures=%zu lightmap=%dx%d",
              width_, height_, reinterpret_cast<const char*>(glGetString(GL_VERSION)),
-             mesh_vertex_count_, textures_.size(), light_map_width_, light_map_height_);
+             mesh_vertex_count_, bsp_triangle_count_, actor_triangle_count_, textures_.size(),
+             light_map_width_, light_map_height_);
         return true;
     }
 
@@ -626,7 +699,7 @@ void main() {
                          GL_RGBA, GL_UNSIGNED_BYTE, light_map_pixels_.data());
         }
         glBindTexture(GL_TEXTURE_2D, 0);
-        LOGI("G4 textures uploaded: materials=%zu lightmap=%dx%d lightmap_rgba=%zu",
+        LOGI("G5 textures uploaded: materials=%zu lightmap=%dx%d lightmap_rgba=%zu",
              texture_ids_.size(), light_map_width_, light_map_height_, light_map_pixels_.size());
     }
 
@@ -646,7 +719,7 @@ void main() {
 
         const std::size_t count = mesh_vertices_.size() / 9u;
         if (count > static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())) {
-            LOGE("G4 mesh has too many vertices for OpenGL ES");
+            LOGE("G5 mesh has too many vertices for OpenGL ES");
             return;
         }
         glGenVertexArrays(1, &vertex_array_);
@@ -673,8 +746,9 @@ void main() {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
         mesh_vertex_count_ = static_cast<GLsizei>(count);
-        LOGI("G4 BSP mesh uploaded: vertices=%d triangles=%d batches=%zu",
-             mesh_vertex_count_, mesh_vertex_count_ / 3, draw_batches_.size());
+        LOGI("G5 scene mesh uploaded: vertices=%d triangles=%d bsp=%zu actors=%zu batches=%zu",
+             mesh_vertex_count_, mesh_vertex_count_ / 3, bsp_triangle_count_,
+             actor_triangle_count_, draw_batches_.size());
     }
 
     void DrawGeometry(float seconds, float controller_yaw) {
@@ -747,6 +821,8 @@ void main() {
     std::vector<std::uint8_t> light_map_pixels_;
     GLsizei light_map_width_ = 0;
     GLsizei light_map_height_ = 0;
+    std::size_t bsp_triangle_count_ = 0;
+    std::size_t actor_triangle_count_ = 0;
 };
 
 class AndroidShell {
@@ -891,8 +967,8 @@ private:
         const auto map_path = FindMap(game_root_, "duel10.unr");
         if (!map_path.has_value()) {
             geometry_ = {};
-            renderer_.SetScene(geometry_, {}, {});
-            LOGI("G4 Duel10.unr is not installed; keeping diagnostic renderer");
+            renderer_.SetScene(geometry_, {}, {}, {});
+            LOGI("G5 Duel10.unr is not installed; keeping diagnostic renderer");
             return;
         }
         const hp2::PackageIndex map_package = hp2::LoadPackageIndex(*map_path);
@@ -909,6 +985,11 @@ private:
             game_root_, map_package, geometry_
         );
         hp2::LightMapAtlas light_maps = hp2::BuildVisibilityLightMapAtlas(geometry_);
+        const hp2::LevelActorCensus actors = hp2::LoadLevelActorCensus(map_package);
+        hp2::ActorMeshScene actor_meshes;
+        if (actors.valid) {
+            actor_meshes = hp2::LoadDirectActorMeshes(game_root_, map_package, actors);
+        }
         if (geometry_.valid) {
             LOGI("G4 BSP ready: map=%s model=%s points=%zu nodes=%zu triangles=%zu",
                  map_path->c_str(), geometry_.object_name.c_str(), geometry_.points.size(),
@@ -932,7 +1013,26 @@ private:
             LOGE("G4 BSP decode failed: map=%s error=%s",
                  map_path->c_str(), geometry_.error.c_str());
         }
-        renderer_.SetScene(geometry_, std::move(textures), std::move(light_maps));
+        if (actors.valid) {
+            LOGI("G5 actors ready: refs=%zu parsed=%zu failures=%zu located=%zu mesh_refs=%zu",
+                 actors.actor_reference_count, actors.parsed_actor_count,
+                 actors.actor_parse_failures, actors.actors_with_location,
+                 actors.direct_mesh_references);
+        } else {
+            LOGE("G5 actor census failed: %s", actors.error.c_str());
+        }
+        if (actor_meshes.valid) {
+            LOGI("G5 actor meshes ready: candidates=%zu assets=%zu instances=%zu failures=%zu triangles=%zu textured=%zu materials=%zu",
+                 actor_meshes.candidate_instances, actor_meshes.decoded_mesh_assets,
+                 actor_meshes.decoded_mesh_instances, actor_meshes.failed_mesh_instances,
+                 actor_meshes.source_triangles, actor_meshes.textured_triangles,
+                 actor_meshes.decoded_materials);
+        } else {
+            LOGE("G5 actor mesh decode failed: %s", actor_meshes.error.c_str());
+        }
+        renderer_.SetScene(
+            geometry_, std::move(textures), std::move(light_maps), std::move(actor_meshes)
+        );
     }
 
     void LogCatalog() const {
