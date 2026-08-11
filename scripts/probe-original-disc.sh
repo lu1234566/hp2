@@ -198,6 +198,9 @@ summary = {
     "g5_actor_textured_triangles": mesh_scene.get("textured_triangles", 0),
     "g5_actor_materials": mesh_scene.get("decoded_materials", 0),
     "g5_actor_failed_materials": mesh_scene.get("failed_materials", 0),
+    "g5_actor_bounds_valid": mesh_scene.get("bounds_valid", False),
+    "g5_actor_bounds_min": mesh_scene.get("bounds_min"),
+    "g5_actor_bounds_max": mesh_scene.get("bounds_max"),
     "g5_mesh_assets": mesh_scene.get("assets", []),
     "g5_mesh_error": mesh_scene.get("error"),
 }

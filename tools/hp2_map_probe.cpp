@@ -272,6 +272,11 @@ int main(int argc, char** argv) {
               << "    \"textured_triangles\": " << actor_meshes.textured_triangles << ",\n"
               << "    \"decoded_materials\": " << actor_meshes.decoded_materials << ",\n"
               << "    \"failed_materials\": " << actor_meshes.failed_materials << ",\n"
+              << "    \"bounds_valid\": " << (actor_meshes.bounds_valid ? "true" : "false") << ",\n"
+              << "    \"bounds_min\": [" << actor_meshes.bounds_min.x << ", "
+              << actor_meshes.bounds_min.y << ", " << actor_meshes.bounds_min.z << "],\n"
+              << "    \"bounds_max\": [" << actor_meshes.bounds_max.x << ", "
+              << actor_meshes.bounds_max.y << ", " << actor_meshes.bounds_max.z << "],\n"
               << "    \"assets\": [\n";
     for (std::size_t index = 0; index < actor_meshes.assets.size(); ++index) {
         const auto& asset = actor_meshes.assets[index];

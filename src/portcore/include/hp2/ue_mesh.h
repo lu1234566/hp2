@@ -61,6 +61,7 @@ struct ActorMeshAssetSummary {
 
 struct ActorMeshScene {
     bool valid = false;
+    bool bounds_valid = false;
     std::size_t candidate_instances = 0;
     std::size_t decoded_mesh_assets = 0;
     std::size_t decoded_mesh_instances = 0;
@@ -69,6 +70,8 @@ struct ActorMeshScene {
     std::size_t textured_triangles = 0;
     std::size_t decoded_materials = 0;
     std::size_t failed_materials = 0;
+    Vec3 bounds_min;
+    Vec3 bounds_max;
     std::vector<ActorMeshAssetSummary> assets;
     std::vector<ActorMeshMaterial> materials;
     std::vector<ActorMeshTriangle> triangles;

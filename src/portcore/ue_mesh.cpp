@@ -863,6 +863,19 @@ ActorMeshScene LoadDirectActorMeshes(
                     mesh.vertices[triangle.indices[corner]], mesh, actor
                 );
                 placed.texture_coordinates[corner] = triangle.texture_coordinates[corner];
+                const Vec3& point = placed.points[corner];
+                if (!result.bounds_valid) {
+                    result.bounds_min = point;
+                    result.bounds_max = point;
+                    result.bounds_valid = true;
+                } else {
+                    result.bounds_min.x = std::min(result.bounds_min.x, point.x);
+                    result.bounds_min.y = std::min(result.bounds_min.y, point.y);
+                    result.bounds_min.z = std::min(result.bounds_min.z, point.z);
+                    result.bounds_max.x = std::max(result.bounds_max.x, point.x);
+                    result.bounds_max.y = std::max(result.bounds_max.y, point.y);
+                    result.bounds_max.z = std::max(result.bounds_max.z, point.z);
+                }
             }
             if (triangle.texture_slot >= 0
                 && static_cast<std::size_t>(triangle.texture_slot) < slot_materials.size()) {
