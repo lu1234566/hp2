@@ -408,8 +408,8 @@ ModelGeometry LoadModelGeometry(const PackageIndex& package, std::size_t export_
             surface.texture_v_vector_index = reader.CompactIndex();
             reader.CompactIndex();  // light-map index
             reader.CompactIndex();  // source brush polygon
-            reader.U16();           // texture pan U
-            reader.U16();           // texture pan V
+            surface.pan_u = static_cast<std::int16_t>(reader.U16());
+            surface.pan_v = static_cast<std::int16_t>(reader.U16());
             reader.CompactIndex();  // source brush actor
             result.surfaces.push_back(surface);
         }

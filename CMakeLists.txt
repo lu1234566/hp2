@@ -9,6 +9,7 @@ add_library(hp2_portcore STATIC
     src/portcore/runtime.cpp
     src/portcore/ue_model.cpp
     src/portcore/ue_package.cpp
+    src/portcore/ue_texture.cpp
 )
 target_include_directories(hp2_portcore PUBLIC src/portcore/include)
 target_compile_options(hp2_portcore PRIVATE -Wall -Wextra -Wpedantic)

@@ -1,7 +1,9 @@
 #include "hp2/runtime.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
+#include "hp2/ue_texture.h"
 
+#include <cmath>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -85,6 +87,114 @@ void AppendName(std::vector<std::uint8_t>& bytes, const std::string& value) {
     AppendU32(bytes, 0);
 }
 
+void AppendExportRecord(
+    std::vector<std::uint8_t>& bytes,
+    std::int32_t class_index,
+    std::int32_t object_name_index,
+    std::int32_t serial_size,
+    std::int32_t serial_offset
+) {
+    AppendCompactIndex(bytes, class_index);
+    AppendCompactIndex(bytes, 0);  // superclass
+    AppendU32(bytes, 0);           // outer
+    AppendCompactIndex(bytes, object_name_index);
+    AppendU32(bytes, 1);           // object flags
+    AppendCompactIndex(bytes, serial_size);
+    AppendCompactIndex(bytes, serial_offset);
+}
+
+std::vector<std::uint8_t> MakeTexturePayload(std::int32_t serial_offset) {
+    std::vector<std::uint8_t> payload;
+    AppendCompactIndex(payload, 4);  // Palette property
+    payload.push_back(0x25u);        // Object, four-byte nominal property size
+    AppendCompactIndex(payload, 2);  // second export: TestPalette
+    AppendCompactIndex(payload, 0);  // tagged-property terminator: None
+
+    AppendCompactIndex(payload, 1);  // mip count
+    const std::size_t lazy_end_position = payload.size();
+    AppendU32(payload, 0);           // absolute end of lazy pixel array
+    AppendCompactIndex(payload, 4);  // pixel-index count
+    payload.insert(payload.end(), {1u, 2u, 3u, 4u});
+    WriteU32(payload, lazy_end_position,
+             static_cast<std::uint32_t>(serial_offset + payload.size()));
+    AppendU32(payload, 2);           // USize
+    AppendU32(payload, 2);           // VSize
+    payload.push_back(1);            // UBits
+    payload.push_back(1);            // VBits
+    return payload;
+}
+
+std::vector<std::uint8_t> MakePalettePayload() {
+    std::vector<std::uint8_t> payload;
+    AppendCompactIndex(payload, 0);    // tagged-property terminator: None
+    AppendCompactIndex(payload, 256);  // palette colors
+    for (std::int32_t index = 0; index < 256; ++index) {
+        const std::uint8_t red = index == 1 || index == 4 ? 255u : 0u;
+        const std::uint8_t green = index == 2 || index == 4 ? 255u : 0u;
+        const std::uint8_t blue = index == 3 || index == 4 ? 255u : 0u;
+        payload.insert(payload.end(), {red, green, blue, 0u});
+    }
+    return payload;
+}
+
+void WriteSyntheticTexturePackage(const std::filesystem::path& path) {
+    std::vector<std::uint8_t> bytes(64, 0);
+    WriteU32(bytes, 0, hp2::kUnrealPackageTag);
+    WriteU16(bytes, 4, 79);
+
+    const std::vector<std::string> names = {
+        "None", "Core", "Class", "Texture", "Palette", "TestTexture", "TestPalette"
+    };
+    const std::size_t name_offset = bytes.size();
+    for (const auto& name : names) {
+        AppendName(bytes, name);
+    }
+
+    const std::size_t import_offset = bytes.size();
+    AppendCompactIndex(bytes, 1);  // Core
+    AppendCompactIndex(bytes, 2);  // Class
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 3);  // Texture
+    AppendCompactIndex(bytes, 1);  // Core
+    AppendCompactIndex(bytes, 2);  // Class
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 4);  // Palette
+
+    const std::size_t export_offset = bytes.size();
+    const std::vector<std::uint8_t> palette_payload = MakePalettePayload();
+    std::size_t table_size = 32;
+    std::vector<std::uint8_t> export_table;
+    std::vector<std::uint8_t> texture_payload;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const std::int32_t texture_offset = static_cast<std::int32_t>(export_offset + table_size);
+        texture_payload = MakeTexturePayload(texture_offset);
+        const std::int32_t palette_offset = texture_offset
+            + static_cast<std::int32_t>(texture_payload.size());
+        export_table.clear();
+        AppendExportRecord(export_table, -1, 5,
+                           static_cast<std::int32_t>(texture_payload.size()), texture_offset);
+        AppendExportRecord(export_table, -2, 6,
+                           static_cast<std::int32_t>(palette_payload.size()), palette_offset);
+        if (export_table.size() == table_size) {
+            break;
+        }
+        table_size = export_table.size();
+    }
+    bytes.insert(bytes.end(), export_table.begin(), export_table.end());
+    bytes.insert(bytes.end(), texture_payload.begin(), texture_payload.end());
+    bytes.insert(bytes.end(), palette_payload.begin(), palette_payload.end());
+
+    WriteU32(bytes, 12, static_cast<std::uint32_t>(names.size()));
+    WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
+    WriteU32(bytes, 20, 2);
+    WriteU32(bytes, 24, static_cast<std::uint32_t>(export_offset));
+    WriteU32(bytes, 28, 2);
+    WriteU32(bytes, 32, static_cast<std::uint32_t>(import_offset));
+
+    std::ofstream output(path, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
 bool Expect(bool condition, const char* message) {
     if (!condition) {
         std::cerr << "FAIL: " << message << '\n';
@@ -99,6 +209,8 @@ int main() {
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto root = std::filesystem::temp_directory_path() / ("hp2-portcore-test-" + std::to_string(nonce));
     std::filesystem::create_directories(root / "Maps");
+    std::filesystem::create_directories(root / "Textures");
+    WriteSyntheticTexturePackage(root / "Textures" / "SyntheticTex.utx");
 
     std::vector<std::uint8_t> bytes(64, 0);
     WriteU32(bytes, 0, hp2::kUnrealPackageTag);
@@ -106,7 +218,8 @@ int main() {
     WriteU16(bytes, 6, 0);
 
     const std::vector<std::string> names = {
-        "None", "Core", "Class", "Model", "MyLevel", "Level", "Model314"
+        "None", "Core", "Class", "Model", "MyLevel", "Level", "Model314",
+        "Package", "Texture", "SyntheticTex", "TestTexture"
     };
     const std::size_t name_offset = bytes.size();
     for (const auto& name : names) {
@@ -118,6 +231,14 @@ int main() {
     AppendCompactIndex(bytes, 2);  // Class
     AppendU32(bytes, 0);           // outer
     AppendCompactIndex(bytes, 3);  // Model
+    AppendCompactIndex(bytes, 1);  // Core
+    AppendCompactIndex(bytes, 7);  // Package
+    AppendU32(bytes, 0);           // outer
+    AppendCompactIndex(bytes, 9);  // SyntheticTex
+    AppendCompactIndex(bytes, 1);  // Core
+    AppendCompactIndex(bytes, 8);  // Texture
+    AppendU32(bytes, 0xfffffffeu); // outer: second import (SyntheticTex)
+    AppendCompactIndex(bytes, 10); // TestTexture
 
     std::vector<std::uint8_t> model_payload;
     AppendCompactIndex(model_payload, 0);  // tagged-property terminator: None
@@ -160,7 +281,7 @@ int main() {
     AppendU32(model_payload, 0xffffffffu);             // front leaf
 
     AppendCompactIndex(model_payload, 1);             // surfaces
-    AppendCompactIndex(model_payload, 0);             // material ref
+    AppendCompactIndex(model_payload, -3);            // TestTexture import
     AppendU32(model_payload, 0);                      // poly flags
     AppendCompactIndex(model_payload, 0);             // base point
     AppendCompactIndex(model_payload, 0);             // normal vector
@@ -168,8 +289,8 @@ int main() {
     AppendCompactIndex(model_payload, 2);             // texture V vector
     AppendCompactIndex(model_payload, -1);            // light map
     AppendCompactIndex(model_payload, -1);            // source brush polygon
-    AppendU16(model_payload, 0);                      // pan U
-    AppendU16(model_payload, 0);                      // pan V
+    AppendU16(model_payload, 1);                      // pan U
+    AppendU16(model_payload, 0xffffu);                // pan V (-1)
     AppendCompactIndex(model_payload, 0);             // source actor
 
     AppendCompactIndex(model_payload, 4);             // BSP vertex pool
@@ -207,7 +328,7 @@ int main() {
     WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
     WriteU32(bytes, 20, 1);
     WriteU32(bytes, 24, static_cast<std::uint32_t>(export_offset));
-    WriteU32(bytes, 28, 1);
+    WriteU32(bytes, 28, 3);
     WriteU32(bytes, 32, static_cast<std::uint32_t>(import_offset));
 
     const auto valid_path = root / "Maps" / "Synthetic.unr";
@@ -220,14 +341,14 @@ int main() {
     const auto summary = hp2::ProbePackage(valid_path);
     ok &= Expect(summary.valid, "synthetic package should be valid");
     ok &= Expect(summary.file_version == 79, "file version should be decoded as little-endian");
-    ok &= Expect(summary.name_count == 7 && summary.import_count == 1 && summary.export_count == 1,
+    ok &= Expect(summary.name_count == 11 && summary.import_count == 3 && summary.export_count == 1,
                  "table counts should be decoded");
 
     const auto package = hp2::LoadPackageIndex(valid_path);
     ok &= Expect(package.valid, "synthetic package index should parse");
-    ok &= Expect(package.names.size() == 7 && package.names[4].value == "MyLevel",
+    ok &= Expect(package.names.size() == 11 && package.names[4].value == "MyLevel",
                  "name table should parse compact strings");
-    ok &= Expect(package.imports.size() == 1 && package.imports[0].object_name == "Model",
+    ok &= Expect(package.imports.size() == 3 && package.imports[0].object_name == "Model",
                  "import table should resolve names");
     ok &= Expect(package.exports.size() == 1 && package.exports[0].class_name == "Model",
                  "export class reference should resolve through imports");
@@ -246,6 +367,34 @@ int main() {
                  "four-vertex BSP face should triangulate into two triangles");
     ok &= Expect(model.bounds_min.x == -1.0f && model.bounds_max.y == 1.0f,
                  "triangulated geometry bounds should be computed");
+    ok &= Expect(model.surfaces[0].pan_u == 1 && model.surfaces[0].pan_v == -1,
+                 "signed BSP texture panning should decode");
+
+    hp2::TextureCoordinate coordinate;
+    ok &= Expect(hp2::ComputeSurfaceTextureCoordinate(model, 0, 2, 2, 2, coordinate),
+                 "BSP texture coordinate should compute");
+    ok &= Expect(std::abs(coordinate.u - 1.5f) < 0.0001f
+                     && std::abs(coordinate.v - 0.5f) < 0.0001f,
+                 "BSP texture coordinate should include base vectors and signed pan");
+
+    const auto texture_package = hp2::LoadPackageIndex(root / "Textures" / "SyntheticTex.utx");
+    ok &= Expect(texture_package.valid && texture_package.exports.size() == 2,
+                 "synthetic texture package should parse");
+    const auto direct_texture = hp2::LoadTextureExport(texture_package, 0);
+    ok &= Expect(direct_texture.valid && direct_texture.width == 2 && direct_texture.height == 2,
+                 "P8 texture mip and palette should decode");
+    ok &= Expect(direct_texture.rgba_pixels.size() == 16
+                     && direct_texture.rgba_pixels[0] == 255
+                     && direct_texture.rgba_pixels[1] == 0
+                     && direct_texture.rgba_pixels[4] == 0
+                     && direct_texture.rgba_pixels[5] == 255,
+                 "palette indices should expand into RGBA pixels");
+
+    const auto surface_texture = hp2::LoadFirstSurfaceTexture(root, package, model);
+    ok &= Expect(surface_texture.valid && surface_texture.map_material_index == -3
+                     && surface_texture.triangle_count == 2
+                     && surface_texture.object_name == "TestTexture",
+                 "dominant BSP material should resolve to its external UTX texture");
 
     hp2::Runtime runtime;
     runtime.Initialize(root);

@@ -97,7 +97,7 @@ g2_probe_status=66
 duel10_path="$(find "$probe_root" -type f -iname 'Duel10.unr' -print -quit)"
 if [[ -n "$duel10_path" ]]; then
     g2_probe_status=0
-    ./.local/build/host/hp2_map_probe "$duel10_path" \
+    ./.local/build/host/hp2_map_probe "$duel10_path" "$probe_root" \
         >"$report_root/g2-duel10-index.json" || g2_probe_status=$?
 else
     echo "Duel10.unr was not found in the extracted installer payload." \
@@ -121,8 +121,9 @@ g2_path = pathlib.Path(sys.argv[3])
 probe = json.loads(probe_path.read_text(encoding="utf-8"))
 g2 = json.loads(g2_path.read_text(encoding="utf-8")) if g2_path.is_file() else {}
 model = g2.get("model_geometry", {})
+texture = g2.get("g3_texture", {})
 summary = {
-    "schema": "hp2-original-disc-probe-v3",
+    "schema": "hp2-original-disc-probe-v4",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -145,6 +146,16 @@ summary = {
     "g2_model_bounds_min": model.get("bounds_min"),
     "g2_model_bounds_max": model.get("bounds_max"),
     "g2_model_error": model.get("error"),
+    "g3_texture_valid": texture.get("valid", False),
+    "g3_texture_material_index": texture.get("material_index"),
+    "g3_texture_triangles": texture.get("triangle_count", 0),
+    "g3_texture_package": texture.get("package_name"),
+    "g3_texture_object": texture.get("object_name"),
+    "g3_texture_palette": texture.get("palette_name"),
+    "g3_texture_width": texture.get("width", 0),
+    "g3_texture_height": texture.get("height", 0),
+    "g3_texture_rgba_bytes": texture.get("rgba_bytes", 0),
+    "g3_texture_error": texture.get("error"),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY

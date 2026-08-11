@@ -14,6 +14,7 @@ add_library(hp2engine SHARED
     "${PORTCORE_ROOT}/runtime.cpp"
     "${PORTCORE_ROOT}/ue_model.cpp"
     "${PORTCORE_ROOT}/ue_package.cpp"
+    "${PORTCORE_ROOT}/ue_texture.cpp"
 )
 
 target_include_directories(hp2engine PRIVATE

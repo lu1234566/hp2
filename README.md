@@ -10,13 +10,13 @@ data, validates files installed by the owner, and keeps the original files
 outside Git. It deliberately omits StS2's Godot, .NET, Steam, Harmony, cloud
 and gameplay-touch layers.
 
-## Current gate: G2 in progress
+## Current gate: G3 in progress
 
-G0 and G1 are complete. The native shell was confirmed on a Samsung Galaxy
-A57, and the owner's original disc yielded 107/107 structurally valid Unreal
-packages. G2b now decodes the primary `Duel10.unr` BSP model into 1,389 valid
-triangles and submits that mesh to OpenGL ES 3. Device confirmation of the
-real-map frame is the remaining acceptance criterion.
+G0, G1 and G2 are complete. The native shell and the real `Duel10.unr` BSP
+frame were confirmed on a Samsung Galaxy A57, and the owner's original disc
+yielded 107/107 structurally valid Unreal packages. G3 now resolves BSP
+surface materials, calculates UE1 texture coordinates and decodes palettized
+texture mipmaps without including any original asset in Git or the APK.
 
 The current foundation provides:
 
@@ -33,6 +33,8 @@ The current foundation provides:
 - a UE1/UE2 package-index reader for compact names, imports and exports;
 - a clean-room `hp2_map_probe` that decodes `Duel10.unr` while emitting only
   metadata and aggregate geometry counts;
+- a bounded UE1 P8 texture/palette reader and BSP UV calculation covered by
+  synthetic tests;
 - GitHub Actions builds, so Google Colab is not part of the workflow.
 
 The runtime diagnostic screen uses four bars, from left to right:
@@ -74,7 +76,7 @@ The original MDF is processed in an ephemeral GitHub Actions runner. G1 found
 42 maps, 53 texture packages, 11 code/content packages and one audio bank; all
 107 package summaries passed structural validation.
 
-G2b additionally decodes the largest `Model` payload in `Duel10.unr` and emits
+G2 additionally decodes the largest `Model` payload in `Duel10.unr` and emits
 only aggregate metadata: `Model314` contains 764 points, 455 BSP nodes, 252
 surfaces, 8,975 BSP vertices and 1,389 valid triangles. The image, map payload
 and all extracted files are deleted at the end of the run.
@@ -130,8 +132,8 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 |---|---|---|
 | G0 | Native Android shell, gamepad path and package-summary probe | PASS |
 | G1 | Exact HP2 package/version catalog from the owner's original media | PASS — 107/107 packages |
-| G2 | First real HP2 map geometry | DEVICE TEST — 1,389 real BSP triangles decoded |
-| G3 | UVs and real textures | Pending |
+| G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
+| G3 | UVs and real textures | IN PROGRESS — decoder and UV path under validation |
 | G4 | Lightmaps and recognizable room | Pending |
 | G5 | Actors, meshes and animation | Pending |
 | G6 | Scripted gameplay, collision and camera | Pending |

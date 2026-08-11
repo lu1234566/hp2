@@ -33,7 +33,8 @@ and
 The PortCore parser is a small independent implementation scoped to HP2's
 observed package versions 76 and 79.
 
-The Android runtime now uploads these decoded triangles to an OpenGL ES 3
-diagnostic renderer. This is G2b device-test status, not a G2 pass: the gate
-passes only after the real-map frame is confirmed on the target Android
-device.
+The Android runtime uploads these decoded triangles to an OpenGL ES 3
+diagnostic renderer. On 11 August 2026, the resulting `Duel10` geometry was
+visually confirmed on the target Samsung Galaxy A57. The rendered frame showed
+the decoded room volume and detached BSP piece, so G2 is now **PASS**. Texture
+coordinates, original texture pixels and lightmaps remain separate later gates.

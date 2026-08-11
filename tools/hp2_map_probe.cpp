@@ -1,5 +1,6 @@
 #include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
+#include "hp2/ue_texture.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -45,8 +46,8 @@ void PrintExport(const hp2::ExportEntry& entry, std::size_t index, const char* i
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: hp2_map_probe <map.unr>\n";
+    if (argc != 2 && argc != 3) {
+        std::cerr << "Usage: hp2_map_probe <map.unr> [game-root]\n";
         return 64;
     }
 
@@ -70,8 +71,16 @@ int main(int argc, char** argv) {
         model.error = "package contains no serialized Model export";
     }
 
+    hp2::DecodedTexture texture;
+    const bool texture_probe_requested = argc == 3;
+    if (texture_probe_requested && model.valid) {
+        texture = hp2::LoadFirstSurfaceTexture(argv[2], package, model);
+    } else if (texture_probe_requested) {
+        texture.error = "model geometry is invalid";
+    }
+
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v1\",\n"
+              << "  \"schema\": \"hp2-map-index-v2\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -101,6 +110,23 @@ int main(int argc, char** argv) {
               << model.bounds_max.y << ", " << model.bounds_max.z << "]";
     if (!model.error.empty()) {
         std::cout << ",\n    \"error\": \"" << JsonEscape(model.error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "  },\n"
+              << "  \"g3_texture\": {\n"
+              << "    \"requested\": " << (texture_probe_requested ? "true" : "false") << ",\n"
+              << "    \"valid\": " << (texture.valid ? "true" : "false") << ",\n"
+              << "    \"material_index\": " << texture.map_material_index << ",\n"
+              << "    \"triangle_count\": " << texture.triangle_count << ",\n"
+              << "    \"package_name\": \"" << JsonEscape(texture.package_name) << "\",\n"
+              << "    \"object_name\": \"" << JsonEscape(texture.object_name) << "\",\n"
+              << "    \"palette_name\": \"" << JsonEscape(texture.palette_name) << "\",\n"
+              << "    \"width\": " << texture.width << ",\n"
+              << "    \"height\": " << texture.height << ",\n"
+              << "    \"rgba_bytes\": " << texture.rgba_pixels.size();
+    if (!texture.error.empty()) {
+        std::cout << ",\n    \"error\": \"" << JsonEscape(texture.error) << "\"\n";
     } else {
         std::cout << "\n";
     }
@@ -137,5 +163,8 @@ int main(int argc, char** argv) {
     if (geometry_count == 0) {
         return 3;
     }
-    return model.valid ? 0 : 4;
+    if (!model.valid) {
+        return 4;
+    }
+    return texture_probe_requested && !texture.valid ? 5 : 0;
 }

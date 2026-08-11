@@ -33,6 +33,8 @@ struct BspSurface {
     std::int32_t normal_vector_index = 0;
     std::int32_t texture_u_vector_index = 0;
     std::int32_t texture_v_vector_index = 0;
+    std::int16_t pan_u = 0;
+    std::int16_t pan_v = 0;
 };
 
 struct BspVertex {
