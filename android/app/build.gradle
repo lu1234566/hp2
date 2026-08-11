@@ -25,7 +25,19 @@ android {
         }
     }
 
+    signingConfigs {
+        development {
+            storeFile file('../dev-signing.keystore')
+            storePassword 'hp2mobiledev'
+            keyAlias 'hp2-dev'
+            keyPassword 'hp2mobiledev'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.development
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

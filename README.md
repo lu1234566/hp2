@@ -99,6 +99,12 @@ Every push and pull request runs host tests and builds a debug APK in GitHub
 Actions. Download `HP2-Mobile-G3a-dev-debug` from the workflow run's
 **Artifacts** section.
 
+Development APKs from G3a onward use the checked-in, non-production development
+certificate so later test builds can update in place. It is intentionally not a
+release credential and must never be reused to sign a production build. Builds
+older than G3a used ephemeral CI certificates and may require one final
+uninstall/reinstall before this stable development update chain begins.
+
 For a local Android build, install JDK 17, Gradle 9.4.1 and the Android
 command-line tools, then run:
 
