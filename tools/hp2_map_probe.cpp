@@ -1,3 +1,4 @@
+#include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
 
 #include <cstddef>
@@ -61,6 +62,14 @@ int main(int argc, char** argv) {
         geometry_count += hp2::IsGeometryCandidate(entry) ? 1u : 0u;
     }
 
+    const std::size_t model_export_index = hp2::FindLargestModelExport(package);
+    hp2::ModelGeometry model;
+    if (model_export_index < package.exports.size()) {
+        model = hp2::LoadModelGeometry(package, model_export_index);
+    } else {
+        model.error = "package contains no serialized Model export";
+    }
+
     std::cout << "{\n"
               << "  \"schema\": \"hp2-map-index-v1\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
@@ -70,6 +79,32 @@ int main(int argc, char** argv) {
               << "  \"import_count\": " << package.imports.size() << ",\n"
               << "  \"export_count\": " << package.exports.size() << ",\n"
               << "  \"geometry_candidate_count\": " << geometry_count << ",\n"
+              << "  \"model_geometry\": {\n"
+              << "    \"valid\": " << (model.valid ? "true" : "false") << ",\n"
+              << "    \"export_index\": "
+              << (model_export_index < package.exports.size()
+                      ? std::to_string(model_export_index)
+                      : std::string("null")) << ",\n"
+              << "    \"object_name\": \"" << JsonEscape(model.object_name) << "\",\n"
+              << "    \"payload_bytes_consumed\": " << model.payload_bytes_consumed << ",\n"
+              << "    \"vectors\": " << model.vectors.size() << ",\n"
+              << "    \"points\": " << model.points.size() << ",\n"
+              << "    \"nodes\": " << model.nodes.size() << ",\n"
+              << "    \"surfaces\": " << model.surfaces.size() << ",\n"
+              << "    \"vertices\": " << model.vertices.size() << ",\n"
+              << "    \"triangles\": " << model.triangles.size() << ",\n"
+              << "    \"skipped_nodes\": " << model.skipped_nodes << ",\n"
+              << "    \"skipped_triangles\": " << model.skipped_triangles << ",\n"
+              << "    \"bounds_min\": [" << model.bounds_min.x << ", "
+              << model.bounds_min.y << ", " << model.bounds_min.z << "],\n"
+              << "    \"bounds_max\": [" << model.bounds_max.x << ", "
+              << model.bounds_max.y << ", " << model.bounds_max.z << "]";
+    if (!model.error.empty()) {
+        std::cout << ",\n    \"error\": \"" << JsonEscape(model.error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "  },\n"
               << "  \"imports\": [\n";
 
     for (std::size_t index = 0; index < package.imports.size(); ++index) {
@@ -99,5 +134,8 @@ int main(int argc, char** argv) {
         std::cout << (index + 1 == package.exports.size() ? "" : ",") << '\n';
     }
     std::cout << "  ]\n}\n";
-    return geometry_count > 0 ? 0 : 3;
+    if (geometry_count == 0) {
+        return 3;
+    }
+    return model.valid ? 0 : 4;
 }

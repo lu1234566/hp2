@@ -120,8 +120,9 @@ summary_path = pathlib.Path(sys.argv[2])
 g2_path = pathlib.Path(sys.argv[3])
 probe = json.loads(probe_path.read_text(encoding="utf-8"))
 g2 = json.loads(g2_path.read_text(encoding="utf-8")) if g2_path.is_file() else {}
+model = g2.get("model_geometry", {})
 summary = {
-    "schema": "hp2-original-disc-probe-v2",
+    "schema": "hp2-original-disc-probe-v3",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -134,6 +135,16 @@ summary = {
     "g2_imports": g2.get("import_count", 0),
     "g2_exports": g2.get("export_count", 0),
     "g2_geometry_candidates": g2.get("geometry_candidate_count", 0),
+    "g2_model_valid": model.get("valid", False),
+    "g2_model_export": model.get("object_name"),
+    "g2_model_points": model.get("points", 0),
+    "g2_model_nodes": model.get("nodes", 0),
+    "g2_model_surfaces": model.get("surfaces", 0),
+    "g2_model_vertices": model.get("vertices", 0),
+    "g2_model_triangles": model.get("triangles", 0),
+    "g2_model_bounds_min": model.get("bounds_min"),
+    "g2_model_bounds_max": model.get("bounds_max"),
+    "g2_model_error": model.get("error"),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY

@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(hp2_portcore STATIC
     src/portcore/runtime.cpp
+    src/portcore/ue_model.cpp
     src/portcore/ue_package.cpp
 )
 target_include_directories(hp2_portcore PUBLIC src/portcore/include)

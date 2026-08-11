@@ -1,8 +1,10 @@
 #include "hp2/runtime.h"
+#include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -26,6 +28,30 @@ void AppendU32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     for (std::size_t index = 0; index < 4; ++index) {
         bytes.push_back(static_cast<std::uint8_t>((value >> (index * 8u)) & 0xffu));
     }
+}
+
+void AppendU16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xffu));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8u) & 0xffu));
+}
+
+void AppendU64(std::vector<std::uint8_t>& bytes, std::uint64_t value) {
+    for (std::size_t index = 0; index < 8; ++index) {
+        bytes.push_back(static_cast<std::uint8_t>((value >> (index * 8u)) & 0xffu));
+    }
+}
+
+void AppendF32(std::vector<std::uint8_t>& bytes, float value) {
+    std::uint32_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value));
+    std::memcpy(&bits, &value, sizeof(bits));
+    AppendU32(bytes, bits);
+}
+
+void AppendVec3(std::vector<std::uint8_t>& bytes, float x, float y, float z) {
+    AppendF32(bytes, x);
+    AppendF32(bytes, y);
+    AppendF32(bytes, z);
 }
 
 void AppendCompactIndex(std::vector<std::uint8_t>& bytes, std::int32_t value) {
@@ -79,7 +105,9 @@ int main() {
     WriteU16(bytes, 4, 79);
     WriteU16(bytes, 6, 0);
 
-    const std::vector<std::string> names = {"None", "Core", "Class", "Model", "MyLevel", "Level"};
+    const std::vector<std::string> names = {
+        "None", "Core", "Class", "Model", "MyLevel", "Level", "Model314"
+    };
     const std::size_t name_offset = bytes.size();
     for (const auto& name : names) {
         AppendName(bytes, name);
@@ -91,13 +119,75 @@ int main() {
     AppendU32(bytes, 0);           // outer
     AppendCompactIndex(bytes, 3);  // Model
 
+    std::vector<std::uint8_t> model_payload;
+    AppendCompactIndex(model_payload, 0);  // tagged-property terminator: None
+
+    AppendVec3(model_payload, -1.0f, -1.0f, -1.0f);  // primitive bounds min
+    AppendVec3(model_payload, 1.0f, 1.0f, 1.0f);     // primitive bounds max
+    model_payload.push_back(1);                       // bounds valid
+    AppendVec3(model_payload, 0.0f, 0.0f, 0.0f);     // sphere center
+    AppendF32(model_payload, 1.75f);                  // sphere radius
+
+    AppendCompactIndex(model_payload, 3);             // vectors
+    AppendVec3(model_payload, 0.0f, 0.0f, 1.0f);
+    AppendVec3(model_payload, 1.0f, 0.0f, 0.0f);
+    AppendVec3(model_payload, 0.0f, 1.0f, 0.0f);
+
+    AppendCompactIndex(model_payload, 4);             // points
+    AppendVec3(model_payload, -1.0f, -1.0f, 0.0f);
+    AppendVec3(model_payload, 1.0f, -1.0f, 0.0f);
+    AppendVec3(model_payload, 1.0f, 1.0f, 0.0f);
+    AppendVec3(model_payload, -1.0f, 1.0f, 0.0f);
+
+    AppendCompactIndex(model_payload, 1);             // nodes
+    AppendF32(model_payload, 0.0f);                   // plane X
+    AppendF32(model_payload, 0.0f);                   // plane Y
+    AppendF32(model_payload, 1.0f);                   // plane Z
+    AppendF32(model_payload, 0.0f);                   // plane W
+    AppendU64(model_payload, 0);                      // zone mask
+    model_payload.push_back(0);                       // node flags
+    AppendCompactIndex(model_payload, 0);             // vertex pool
+    AppendCompactIndex(model_payload, 0);             // surface
+    AppendCompactIndex(model_payload, -1);            // back
+    AppendCompactIndex(model_payload, -1);            // front
+    AppendCompactIndex(model_payload, -1);            // coplanar
+    AppendCompactIndex(model_payload, -1);            // collision bound
+    AppendCompactIndex(model_payload, -1);            // render bound
+    AppendCompactIndex(model_payload, 0);             // back zone
+    AppendCompactIndex(model_payload, 0);             // front zone
+    model_payload.push_back(4);                       // polygon vertex count
+    AppendU32(model_payload, 0xffffffffu);             // back leaf
+    AppendU32(model_payload, 0xffffffffu);             // front leaf
+
+    AppendCompactIndex(model_payload, 1);             // surfaces
+    AppendCompactIndex(model_payload, 0);             // material ref
+    AppendU32(model_payload, 0);                      // poly flags
+    AppendCompactIndex(model_payload, 0);             // base point
+    AppendCompactIndex(model_payload, 0);             // normal vector
+    AppendCompactIndex(model_payload, 1);             // texture U vector
+    AppendCompactIndex(model_payload, 2);             // texture V vector
+    AppendCompactIndex(model_payload, -1);            // light map
+    AppendCompactIndex(model_payload, -1);            // source brush polygon
+    AppendU16(model_payload, 0);                      // pan U
+    AppendU16(model_payload, 0);                      // pan V
+    AppendCompactIndex(model_payload, 0);             // source actor
+
+    AppendCompactIndex(model_payload, 4);             // BSP vertex pool
+    for (std::int32_t point_index = 0; point_index < 4; ++point_index) {
+        AppendCompactIndex(model_payload, point_index);
+        AppendCompactIndex(model_payload, -1);
+    }
+    AppendU32(model_payload, 0);                      // shared sides
+    AppendU32(model_payload, 0);                      // zones
+    AppendCompactIndex(model_payload, 0);             // Polys object ref
+
     const std::size_t export_offset = bytes.size();
     AppendCompactIndex(bytes, -1); // class = first import (Model)
     AppendCompactIndex(bytes, 0);  // superclass
     AppendU32(bytes, 0);           // outer
-    AppendCompactIndex(bytes, 4);  // MyLevel
+    AppendCompactIndex(bytes, 6);  // Model314
     AppendU32(bytes, 0x00000001u); // flags
-    AppendCompactIndex(bytes, 4);  // serial size
+    AppendCompactIndex(bytes, static_cast<std::int32_t>(model_payload.size()));
     const std::size_t serial_offset_base = bytes.size();
     std::size_t serial_offset = serial_offset_base + 1;
     std::vector<std::uint8_t> encoded_serial_offset;
@@ -111,7 +201,7 @@ int main() {
         serial_offset = adjusted_offset;
     }
     bytes.insert(bytes.end(), encoded_serial_offset.begin(), encoded_serial_offset.end());
-    bytes.insert(bytes.end(), {1, 2, 3, 4});
+    bytes.insert(bytes.end(), model_payload.begin(), model_payload.end());
 
     WriteU32(bytes, 12, static_cast<std::uint32_t>(names.size()));
     WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
@@ -130,12 +220,12 @@ int main() {
     const auto summary = hp2::ProbePackage(valid_path);
     ok &= Expect(summary.valid, "synthetic package should be valid");
     ok &= Expect(summary.file_version == 79, "file version should be decoded as little-endian");
-    ok &= Expect(summary.name_count == 6 && summary.import_count == 1 && summary.export_count == 1,
+    ok &= Expect(summary.name_count == 7 && summary.import_count == 1 && summary.export_count == 1,
                  "table counts should be decoded");
 
     const auto package = hp2::LoadPackageIndex(valid_path);
     ok &= Expect(package.valid, "synthetic package index should parse");
-    ok &= Expect(package.names.size() == 6 && package.names[4].value == "MyLevel",
+    ok &= Expect(package.names.size() == 7 && package.names[4].value == "MyLevel",
                  "name table should parse compact strings");
     ok &= Expect(package.imports.size() == 1 && package.imports[0].object_name == "Model",
                  "import table should resolve names");
@@ -143,6 +233,19 @@ int main() {
                  "export class reference should resolve through imports");
     ok &= Expect(package.exports.size() == 1 && hp2::IsGeometryCandidate(package.exports[0]),
                  "model export should be selected as a geometry candidate");
+
+    ok &= Expect(hp2::FindLargestModelExport(package) == 0,
+                 "largest Model export should be selected");
+    const auto model = hp2::LoadModelGeometry(package, 0);
+    ok &= Expect(model.valid, "synthetic Model payload should decode");
+    ok &= Expect(model.vectors.size() == 3 && model.points.size() == 4,
+                 "Model vectors and points should decode");
+    ok &= Expect(model.nodes.size() == 1 && model.surfaces.size() == 1 && model.vertices.size() == 4,
+                 "Model BSP arrays should decode");
+    ok &= Expect(model.triangles.size() == 2,
+                 "four-vertex BSP face should triangulate into two triangles");
+    ok &= Expect(model.bounds_min.x == -1.0f && model.bounds_max.y == 1.0f,
+                 "triangulated geometry bounds should be computed");
 
     hp2::Runtime runtime;
     runtime.Initialize(root);
