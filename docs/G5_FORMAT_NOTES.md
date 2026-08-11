@@ -97,6 +97,21 @@ the complete room, switches automatically to an object-only view, then returns
 to the room. Controller **A** is retained only as an optional manual override;
 no touch gameplay was added.
 
-G5 is not complete at G5c: inherited mesh coverage still needs the private
-metadata probe and device capture, while skeletal animation, collision and
-scripted behavior remain separate acceptance steps.
+The 2026-08-11 G5c private run scanned 79 class exports, found 45 relevant
+default-property tails and resolved every class chain without error. It found
+76 inherited mesh candidates and decoded 73 visible inherited instances,
+bringing the scene to 27 distinct mesh assets and 32,595 triangles. The set
+includes the room's throne, rectangular tables, footstools, candles, hanging
+lamps, fireplace logs and jar, plus multiple character classes. Of the actor
+triangles, 21,219 use 41 decoded materials; there were zero mesh failures and
+zero material failures. These are metadata-only counts and object labels.
+
+Some cutscene actors are intentionally positioned far outside the BSP room.
+They remain harmlessly outside the normal world camera, but their extreme
+bounds would make the object-only diagnostic too small. The focus copy therefore
+includes only triangles whose centroid lies within the BSP bounds plus an 8%
+margin; this does not alter any world placement or source geometry.
+
+G5 is not complete at G5c: inherited mesh coverage now needs its device capture,
+while skeletal animation, collision and scripted behavior remain separate
+acceptance steps.

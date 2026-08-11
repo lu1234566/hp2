@@ -285,6 +285,13 @@ public:
         std::vector<std::vector<const hp2::ActorMeshTriangle*>> actor_groups(
             textures_.size() + 1u
         );
+        std::vector<std::vector<const hp2::ActorMeshTriangle*>> focus_actor_groups(
+            textures_.size() + 1u
+        );
+        bool focus_bounds_valid = false;
+        hp2::Vec3 focus_bounds_min{};
+        hp2::Vec3 focus_bounds_max{};
+        const float focus_margin = largest_extent * 0.08f;
         for (const hp2::ActorMeshTriangle& triangle : actor_meshes.triangles) {
             std::size_t group = 0;
             if (triangle.material_index >= 0
@@ -298,18 +305,46 @@ public:
                 }
             }
             actor_groups[group].push_back(&triangle);
+            const hp2::Vec3 centroid = {
+                (triangle.points[0].x + triangle.points[1].x + triangle.points[2].x) / 3.0f,
+                (triangle.points[0].y + triangle.points[1].y + triangle.points[2].y) / 3.0f,
+                (triangle.points[0].z + triangle.points[1].z + triangle.points[2].z) / 3.0f
+            };
+            if (centroid.x < geometry.bounds_min.x - focus_margin
+                || centroid.x > geometry.bounds_max.x + focus_margin
+                || centroid.y < geometry.bounds_min.y - focus_margin
+                || centroid.y > geometry.bounds_max.y + focus_margin
+                || centroid.z < geometry.bounds_min.z - focus_margin
+                || centroid.z > geometry.bounds_max.z + focus_margin) {
+                continue;
+            }
+            focus_actor_groups[group].push_back(&triangle);
+            for (const hp2::Vec3& point : triangle.points) {
+                if (!focus_bounds_valid) {
+                    focus_bounds_min = point;
+                    focus_bounds_max = point;
+                    focus_bounds_valid = true;
+                } else {
+                    focus_bounds_min.x = std::min(focus_bounds_min.x, point.x);
+                    focus_bounds_min.y = std::min(focus_bounds_min.y, point.y);
+                    focus_bounds_min.z = std::min(focus_bounds_min.z, point.z);
+                    focus_bounds_max.x = std::max(focus_bounds_max.x, point.x);
+                    focus_bounds_max.y = std::max(focus_bounds_max.y, point.y);
+                    focus_bounds_max.z = std::max(focus_bounds_max.z, point.z);
+                }
+            }
         }
         hp2::Vec3 actor_center{};
         float actor_scale = 0.0f;
-        if (actor_meshes.bounds_valid) {
+        if (focus_bounds_valid) {
             actor_center = {
-                (actor_meshes.bounds_min.x + actor_meshes.bounds_max.x) * 0.5f,
-                (actor_meshes.bounds_min.y + actor_meshes.bounds_max.y) * 0.5f,
-                (actor_meshes.bounds_min.z + actor_meshes.bounds_max.z) * 0.5f
+                (focus_bounds_min.x + focus_bounds_max.x) * 0.5f,
+                (focus_bounds_min.y + focus_bounds_max.y) * 0.5f,
+                (focus_bounds_min.z + focus_bounds_max.z) * 0.5f
             };
-            const float actor_extent_x = actor_meshes.bounds_max.x - actor_meshes.bounds_min.x;
-            const float actor_extent_y = actor_meshes.bounds_max.y - actor_meshes.bounds_min.y;
-            const float actor_extent_z = actor_meshes.bounds_max.z - actor_meshes.bounds_min.z;
+            const float actor_extent_x = focus_bounds_max.x - focus_bounds_min.x;
+            const float actor_extent_y = focus_bounds_max.y - focus_bounds_min.y;
+            const float actor_extent_z = focus_bounds_max.z - focus_bounds_min.z;
             const float actor_extent = std::max({actor_extent_x, actor_extent_y, actor_extent_z});
             if (std::isfinite(actor_extent) && actor_extent > 0.0f) {
                 actor_scale = 1.55f / actor_extent;
@@ -344,9 +379,9 @@ public:
             });
             actor_triangle_count_ += vertex_count / 3u;
 
-            if (actor_scale > 0.0f) {
+            if (actor_scale > 0.0f && !focus_actor_groups[group].empty()) {
                 const std::size_t focus_first_vertex = mesh_vertices_.size() / 9u;
-                for (const hp2::ActorMeshTriangle* triangle : actor_groups[group]) {
+                for (const hp2::ActorMeshTriangle* triangle : focus_actor_groups[group]) {
                     for (std::size_t corner = 0; corner < triangle->points.size(); ++corner) {
                         const hp2::Vec3& point = triangle->points[corner];
                         mesh_vertices_.push_back((point.x - actor_center.x) * actor_scale);

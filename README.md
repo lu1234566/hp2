@@ -137,6 +137,15 @@ so G5b is visually approved. The device had no controller connected; that is
 not a failure because the image itself covers the visual acceptance criterion.
 G5c diagnostics now cycle views automatically for the same reason.
 
+The G5c private probe resolved 76 inherited mesh candidates in addition to the
+two direct references. It decoded 73 visible inherited instances across 27
+distinct mesh assets with zero mesh failures. The recovered set includes room
+props such as the throne, tables, footstools, candles, hanging lamps, fireplace
+logs and a jar, as well as character classes. In total, the actor/object path
+produced 32,595 triangles; 21,219 use 41 decoded original materials, with zero
+material failures. Only these names and aggregate counts left the ephemeral
+runner. The next acceptance evidence is the G5c device capture.
+
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
 - [G2 format notes](docs/G2_FORMAT_NOTES.md)

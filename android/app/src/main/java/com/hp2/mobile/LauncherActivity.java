@@ -155,7 +155,7 @@ public final class LauncherActivity extends AppCompatActivity {
         content.addView(space(10));
         content.addView(gateCard("G5b", "Ator texturizado no Galaxy A57", "PASS", COLOR_GREEN));
         content.addView(space(10));
-        content.addView(gateCard("G5c", "Móveis herdados das classes", "EM TESTE", COLOR_GOLD));
+        content.addView(gateCard("G5c", "Objetos e atores herdados", "EM TESTE", COLOR_GOLD));
 
         content.addView(space(20));
         final Button appSettings = compactButton("Abrir informações do app");
