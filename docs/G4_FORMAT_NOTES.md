@@ -39,3 +39,13 @@ null-terminated light lists, atlas packing and UV mapping. The private workflow
 may publish aggregate counts and atlas dimensions only. Original texture
 pixels, shadow masks, map payloads and generated atlas pixels never leave the
 ephemeral runner and are never added to Git or the APK.
+
+## Private validation result
+
+The metadata-only run against the owner's original media passed on 2026-08-11.
+`Duel10` referenced 33 material candidates and all 33 decoded successfully,
+covering all 1,389 BSP triangles. The model contained 245 light-map records;
+all 245 were referenced by rendered surfaces. The reader consumed 34,688
+packed `LightBits` bytes and 1,379 masks, then built a 256×256 atlas covering
+245 surfaces and 1,344 triangles. No original pixel, mask or map payload was
+retained in the report artifact.

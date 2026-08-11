@@ -13,11 +13,12 @@ and gameplay-touch layers.
 ## Current gate: G4 in progress
 
 G0 through G3 are complete. On 2026-08-11 the Galaxy A57 visibly confirmed the
-first original `Duel10` texture on the real BSP, closing G3. G4a expands that
+first original `Duel10` textures on the real BSP, closing G3. G4a expands that
 path to every decodable BSP material and reads UE1 `FLightMapIndex`/
-`LightBits` data into a bounded visibility-lightmap atlas. The device test is
-the remaining acceptance step; no original asset is included in Git or the
-APK.
+`LightBits` data into a bounded visibility-lightmap atlas. The private original-
+media probe passed for all 33 referenced materials and all 245 referenced
+lightmaps; the Galaxy A57 device test is the remaining acceptance step. No
+original asset is included in Git or the APK.
 
 The current foundation provides:
 
@@ -91,9 +92,12 @@ counts leave the private runner; its 65,536 decoded RGBA bytes do not.
 
 G4a parses each `FLightMapIndex`, the packed `LightBits` shadow masks and the
 null-terminated per-surface light list. The private workflow reports only
-aggregate counts and atlas dimensions; decoded textures, mask pixels and the
-atlas remain inside the ephemeral process and are deleted with the original
-data.
+aggregate counts and atlas dimensions. Its 2026-08-11 run decoded 33/33 BSP
+materials with no failures, textured all 1,389 triangles, parsed 245/245
+referenced lightmaps and 1,379 shadow masks, and produced a 256×256 atlas that
+lights 1,344 triangles across 245 surfaces. Decoded textures, mask pixels and
+the atlas remain inside the ephemeral process and are deleted with the
+original data.
 
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
@@ -156,7 +160,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G1 | Exact HP2 package/version catalog from the owner's original media | PASS — 107/107 packages |
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
-| G4 | Lightmaps and recognizable room | DEVICE TEST — G4a implementation ready for private validation |
+| G4 | Lightmaps and recognizable room | DEVICE TEST — private data and Android builds pass; G4a APK ready |
 | G5 | Actors, meshes and animation | Pending |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
