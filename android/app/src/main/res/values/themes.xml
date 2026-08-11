@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.HP2Mobile" parent="Theme.AppCompat.NoActionBar">
+    <style name="Theme.HP2Mobile" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:fontFamily">sans</item>
