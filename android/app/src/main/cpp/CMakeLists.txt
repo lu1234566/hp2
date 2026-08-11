@@ -36,6 +36,7 @@ target_compile_options(hp2engine PRIVATE
 
 target_link_options(hp2engine PRIVATE
     "-Wl,-z,max-page-size=16384"
+    "-Wl,-u,Java_com_google_androidgamesdk_GameActivity_initializeNativeCode"
 )
 
 set_target_properties(hp2engine PROPERTIES
