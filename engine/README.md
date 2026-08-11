@@ -1,16 +1,5 @@
-# HP2 Engine Source
+# Engine boundary
 
-Place the leaked HP2 engine source here.
+This project does not use leaked, proprietary or prototype engine source.
 
-Expected structure:
-```
-engine/
-  Core/
-  Engine/
-  Renderer/
-  Audio/
-  ...
-```
-
-Download from Internet Archive:
-https://archive.org/details/HP2-Windows-Prototype
+Clean-room runtime code lives in `src/portcore/`. Any implementation added here must be independently authored from observed file formats and runtime behavior, and must not contain original game source, binaries or assets.

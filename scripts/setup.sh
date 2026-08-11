@@ -1,14 +1,23 @@
-#!/bin/bash
-set -e
-echo "========================================"
-echo "  HP2 Mobile - Setup"
-echo "========================================"
-if [ -z "$ANDROID_SDK_ROOT" ]; then
-    echo "Set ANDROID_SDK_ROOT first!"
-    echo "Example: export ANDROID_SDK_ROOT=/home/user/Android/Sdk"
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "${ANDROID_SDK_ROOT:-}" ]]; then
+    echo "ANDROID_SDK_ROOT is not set." >&2
     exit 1
 fi
-yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
-$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
-    "platforms;android-34" "build-tools;34.0.0" "ndk;26.3.11579264" "cmake;3.22.1"
-echo "Setup complete!"
+
+SDK_MANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+if [[ ! -x "$SDK_MANAGER" ]]; then
+    echo "sdkmanager was not found at $SDK_MANAGER" >&2
+    exit 1
+fi
+
+yes | "$SDK_MANAGER" --licenses >/dev/null || true
+"$SDK_MANAGER" \
+    "platforms;android-37" \
+    "build-tools;36.0.0" \
+    "platform-tools" \
+    "ndk;28.2.13676358" \
+    "cmake;3.22.1"
+
+echo "Android SDK components are ready."

@@ -1,7 +1,9 @@
 <resources>
-    <style name="Theme.HP2Mobile" parent="Theme.Material3.Dark.NoActionBar">
+    <style name="Theme.HP2Mobile" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#D9B45B</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
     <style name="Theme.HP2Mobile.Fullscreen" parent="Theme.HP2Mobile">

@@ -1,0 +1,45 @@
+name: Build HP2 Mobile G0
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure PortCore
+        run: cmake -S . -B .local/build/cmake -DCMAKE_BUILD_TYPE=Release
+      - name: Build PortCore
+        run: cmake --build .local/build/cmake --parallel
+      - name: Run tests
+        run: ctest --test-dir .local/build/cmake --output-on-failure
+
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+      - name: Install Android build components
+        run: sdkmanager "platforms;android-37" "build-tools;36.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.4.1"
+          cache-provider: basic
+      - name: Build data-free debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HP2-Mobile-G0-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
