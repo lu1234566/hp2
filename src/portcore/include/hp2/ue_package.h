@@ -26,8 +26,46 @@ struct PackageSummary {
     std::string error;
 };
 
+struct NameEntry {
+    std::string value;
+    std::uint32_t flags = 0;
+};
+
+struct ImportEntry {
+    std::int32_t class_package_name_index = 0;
+    std::int32_t class_name_index = 0;
+    std::int32_t package_index = 0;
+    std::int32_t object_name_index = 0;
+    std::string class_package;
+    std::string class_name;
+    std::string object_name;
+};
+
+struct ExportEntry {
+    std::int32_t class_index = 0;
+    std::int32_t super_index = 0;
+    std::int32_t package_index = 0;
+    std::int32_t object_name_index = 0;
+    std::uint32_t object_flags = 0;
+    std::int32_t serial_size = 0;
+    std::int32_t serial_offset = 0;
+    std::string object_name;
+    std::string class_name;
+};
+
+struct PackageIndex {
+    PackageSummary summary;
+    std::vector<NameEntry> names;
+    std::vector<ImportEntry> imports;
+    std::vector<ExportEntry> exports;
+    bool valid = false;
+    std::string error;
+};
+
 bool IsPackageExtension(const std::filesystem::path& path);
 PackageSummary ProbePackage(const std::filesystem::path& path);
+PackageIndex LoadPackageIndex(const std::filesystem::path& path);
+bool IsGeometryCandidate(const ExportEntry& entry);
 std::vector<PackageSummary> ScanPackages(
     const std::filesystem::path& root,
     std::size_t max_packages = 4096

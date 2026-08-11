@@ -5,10 +5,13 @@ on:
   pull_request:
     paths:
       - ".github/workflows/probe-original-disc.yml"
+      - "CMakeLists.txt"
       - "scripts/probe-original-disc.sh"
       - "scripts/build-host.sh"
       - "src/portcore/**"
       - "tools/hp2_probe.cpp"
+      - "tools/hp2_map_probe.cpp"
+      - "tests/portcore_tests.cpp"
 
 permissions:
   contents: read

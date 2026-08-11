@@ -11,18 +11,24 @@
         android:theme="@style/Theme.HP2Mobile">
 
         <activity
+            android:name="com.hp2.mobile.LauncherActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name="com.hp2.mobile.MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
-            android:exported="true"
+            android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.HP2Mobile.Fullscreen">
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="hp2engine" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
 
     </application>

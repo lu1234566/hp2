@@ -1,4 +1,4 @@
-name: Build HP2 Mobile G0
+name: Build HP2 Mobile G2 dev
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
           cache-provider: basic
       - name: Build data-free debug APK
         run: gradle --no-daemon :app:assembleDebug
-      - name: Verify Android startup contract
+      - name: Verify launcher and native startup contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -51,9 +51,11 @@ jobs:
           grep -Eq '[[:space:]]android_main$' "$RUNNER_TEMP/hp2engine-symbols.txt"
           grep -Eq '[[:space:]]Java_com_google_androidgamesdk_GameActivity_initializeNativeCode$' "$RUNNER_TEMP/hp2engine-symbols.txt"
           grep -Fq 'parent="Theme.AppCompat' android/app/src/main/res/values/themes.xml
+          grep -Fq 'com.hp2.mobile.LauncherActivity' android/app/src/main/AndroidManifest.xml
+          grep -Fq 'android.intent.category.LAUNCHER' android/app/src/main/AndroidManifest.xml
       - uses: actions/upload-artifact@v7
         with:
-          name: HP2-Mobile-G0-debug
+          name: HP2-Mobile-G2-dev-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

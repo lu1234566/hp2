@@ -87,33 +87,53 @@ while IFS= read -r -d '' cab_path; do
     unshield -d "$cab_target" x "$cab_path" >>"$report_root/unshield.log" 2>&1 || true
 done < <(find "$disc_root" -type f -iname 'data1.cab' -print0)
 
-echo "Building the clean-room package probe..."
+echo "Building the clean-room package probes..."
 ./scripts/build-host.sh >"$report_root/build-host.log" 2>&1
 
 probe_status=0
 ./.local/build/host/hp2_probe "$probe_root" >"$report_root/probe.json" || probe_status=$?
+
+g2_probe_status=66
+duel10_path="$(find "$probe_root" -type f -iname 'Duel10.unr' -print -quit)"
+if [[ -n "$duel10_path" ]]; then
+    g2_probe_status=0
+    ./.local/build/host/hp2_map_probe "$duel10_path" \
+        >"$report_root/g2-duel10-index.json" || g2_probe_status=$?
+else
+    echo "Duel10.unr was not found in the extracted installer payload." \
+        >"$report_root/g2-duel10-index.error.txt"
+fi
 
 find "$disc_root" "$installer_root" -type f -printf '%s\t%p\n' \
     | sed "s#${probe_root}/##" \
     | LC_ALL=C sort >"$report_root/extracted-files.tsv"
 
 python3 - "$report_root/probe.json" "$report_root/summary.json" \
-    "$mdf_bytes" "$mdf_sha256" "$cab_count" "$probe_status" <<'PY'
+    "$report_root/g2-duel10-index.json" "$mdf_bytes" "$mdf_sha256" \
+    "$cab_count" "$probe_status" "$g2_probe_status" <<'PY'
 import json
 import pathlib
 import sys
 
 probe_path = pathlib.Path(sys.argv[1])
 summary_path = pathlib.Path(sys.argv[2])
+g2_path = pathlib.Path(sys.argv[3])
 probe = json.loads(probe_path.read_text(encoding="utf-8"))
+g2 = json.loads(g2_path.read_text(encoding="utf-8")) if g2_path.is_file() else {}
 summary = {
-    "schema": "hp2-original-disc-probe-v1",
-    "mdf_bytes": int(sys.argv[3]),
-    "mdf_sha256": sys.argv[4],
-    "installshield_cab_sets": int(sys.argv[5]),
-    "probe_exit_code": int(sys.argv[6]),
+    "schema": "hp2-original-disc-probe-v2",
+    "mdf_bytes": int(sys.argv[4]),
+    "mdf_sha256": sys.argv[5],
+    "installshield_cab_sets": int(sys.argv[6]),
+    "probe_exit_code": int(sys.argv[7]),
     "package_candidates": probe.get("candidate_count", 0),
     "valid_packages": probe.get("valid_count", 0),
+    "g2_map_probe_exit_code": int(sys.argv[8]),
+    "g2_map": "Duel10.unr" if g2 else None,
+    "g2_names": g2.get("name_count", 0),
+    "g2_imports": g2.get("import_count", 0),
+    "g2_exports": g2.get("export_count", 0),
+    "g2_geometry_candidates": g2.get("geometry_candidate_count", 0),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY

@@ -15,6 +15,9 @@ target_compile_options(hp2_portcore PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(hp2_probe tools/hp2_probe.cpp)
 target_link_libraries(hp2_probe PRIVATE hp2_portcore)
 
+add_executable(hp2_map_probe tools/hp2_map_probe.cpp)
+target_link_libraries(hp2_map_probe PRIVATE hp2_portcore)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(portcore_tests tests/portcore_tests.cpp)
