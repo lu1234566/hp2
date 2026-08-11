@@ -2,7 +2,7 @@ name: Build HP2 Mobile G0
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: [main, "codex/**", "agent/**"]
   pull_request:
 
 permissions:
@@ -37,6 +37,20 @@ jobs:
           cache-provider: basic
       - name: Build data-free debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: Verify Android startup contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find android/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$apk"
+          unzip -p "$apk" lib/arm64-v8a/libhp2engine.so > "$RUNNER_TEMP/libhp2engine.so"
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-entries.txt"
+          readelf --dyn-syms --wide "$RUNNER_TEMP/libhp2engine.so" > "$RUNNER_TEMP/hp2engine-symbols.txt"
+          test -s "$RUNNER_TEMP/libhp2engine.so"
+          grep -Fxq 'lib/arm64-v8a/libc++_shared.so' "$RUNNER_TEMP/apk-entries.txt"
+          grep -Eq '[[:space:]]android_main$' "$RUNNER_TEMP/hp2engine-symbols.txt"
+          grep -Eq '[[:space:]]Java_com_google_androidgamesdk_GameActivity_initializeNativeCode$' "$RUNNER_TEMP/hp2engine-symbols.txt"
+          grep -Fq 'parent="Theme.AppCompat' android/app/src/main/res/values/themes.xml
       - uses: actions/upload-artifact@v7
         with:
           name: HP2-Mobile-G0-debug
