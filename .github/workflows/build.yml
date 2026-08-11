@@ -1,4 +1,4 @@
-name: Build HP2 Mobile G2b dev
+name: Build HP2 Mobile G3a dev
 
 on:
   push:
@@ -54,10 +54,11 @@ jobs:
           grep -Fq 'com.hp2.mobile.LauncherActivity' android/app/src/main/AndroidManifest.xml
           grep -Fq 'android.intent.category.LAUNCHER' android/app/src/main/AndroidManifest.xml
           grep -Fq '"${PORTCORE_ROOT}/ue_model.cpp"' android/app/src/main/cpp/CMakeLists.txt
-          grep -Fq 'LoadPrimaryModelGeometry' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq '"${PORTCORE_ROOT}/ue_texture.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq 'LoadFirstSurfaceTexture' android/app/src/main/cpp/platform/android_main.cpp
       - uses: actions/upload-artifact@v7
         with:
-          name: HP2-Mobile-G2b-dev-debug
+          name: HP2-Mobile-G3a-dev-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
