@@ -88,7 +88,7 @@ while IFS= read -r -d '' cab_path; do
 done < <(find "$disc_root" -type f -iname 'data1.cab' -print0)
 
 echo "Building the clean-room package probes..."
-./scripts/build-host.sh >"$report_root/build-host.log" 2>&1
+bash ./scripts/build-host.sh >"$report_root/build-host.log" 2>&1
 
 probe_status=0
 ./.local/build/host/hp2_probe "$probe_root" >"$report_root/probe.json" || probe_status=$?
