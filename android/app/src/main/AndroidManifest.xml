@@ -8,8 +8,7 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:label="@string/app_name"
-        android:theme="@style/Theme.HP2Mobile"
-        android:extractNativeLibs="true">
+        android:theme="@style/Theme.HP2Mobile">
 
         <activity
             android:name="com.hp2.mobile.MainActivity"
