@@ -63,8 +63,15 @@ struct ActorMeshScene {
     bool valid = false;
     bool bounds_valid = false;
     std::size_t candidate_instances = 0;
+    std::size_t direct_mesh_candidates = 0;
+    std::size_t inherited_mesh_candidates = 0;
+    std::size_t class_exports_scanned = 0;
+    std::size_t class_default_streams_found = 0;
+    std::size_t class_default_scan_misses = 0;
+    std::size_t class_resolution_failures = 0;
     std::size_t decoded_mesh_assets = 0;
     std::size_t decoded_mesh_instances = 0;
+    std::size_t decoded_inherited_mesh_instances = 0;
     std::size_t failed_mesh_instances = 0;
     std::size_t source_triangles = 0;
     std::size_t textured_triangles = 0;

@@ -35,6 +35,7 @@ struct ObjectProperties {
 
 struct ActorInstance {
     std::int32_t object_reference = 0;
+    std::int32_t class_reference = 0;
     std::size_t export_index = 0;
     std::string object_name;
     std::string class_name;
@@ -51,6 +52,7 @@ struct ActorInstance {
     float draw_scale = 1.0f;
     bool has_draw_scale_3d = false;
     Vec3 draw_scale_3d{1.0f, 1.0f, 1.0f};
+    bool has_hidden = false;
     bool hidden = false;
 
     std::int32_t mesh_reference = 0;
@@ -85,6 +87,23 @@ ObjectProperties LoadObjectProperties(
     const PackageIndex& package,
     std::size_t export_index
 );
+
+ObjectProperties ScanClassDefaultProperties(
+    const PackageIndex& package,
+    std::size_t export_index,
+    std::size_t max_scan_bytes = 64u * 1024u
+);
+
+const SerializedProperty* FindObjectProperty(
+    const ObjectProperties& object,
+    const char* name
+);
+
+bool DecodePropertyVec3(const SerializedProperty* property, Vec3& value);
+bool DecodePropertyRotator(const SerializedProperty* property, Rotator& value);
+bool DecodePropertyFloat(const SerializedProperty* property, float& value);
+bool DecodePropertyBool(const SerializedProperty* property, bool& value);
+std::int32_t DecodePropertyObjectReference(const SerializedProperty* property);
 
 LevelActorCensus LoadLevelActorCensus(const PackageIndex& package);
 

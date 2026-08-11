@@ -18,9 +18,13 @@ visibility-lightmap atlas, closing G4. G5a added the separate object path:
 it reads the `ULevel` actor array, bounded `StateFrame` and tagged transform/
 mesh properties, decodes directly referenced UE1 `Mesh`, `LodMesh` and
 `SkeletalMesh` reference-pose geometry, and places the first duelist in the
-BSP world. The G5b validation view now starts focused on that same actor;
-controller **A** alternates between the enlarged inspection and complete-room
-views. No original asset is included in Git or the APK.
+BSP world. A Galaxy A57 capture then confirmed the enlarged G5b duelist with
+coherent reference-pose geometry, UVs and original textures, closing that
+visual checkpoint without requiring a controller. G5c now resolves decoration
+meshes and transform defaults inherited from imported UE1 classes. Its device
+diagnostic alternates automatically between the complete room and an
+actor/object-only view; controller **A** remains an optional manual override.
+No original asset is included in Git or the APK.
 
 The current foundation provides:
 
@@ -45,12 +49,15 @@ The current foundation provides:
   mesh references;
 - bounded UE1 `Mesh`, `LodMesh` and `SkeletalMesh` reference-pose readers with
   actor transforms and original mesh-material resolution;
+- a bounded, cached UE1 `UClass` default-property tail reader for inherited
+  decoration meshes, pivots, scales and hidden state;
 - GitHub Actions builds, so Google Colab is not part of the workflow.
 
 The runtime diagnostic screen uses four bars, from left to right:
 
 1. native runtime loaded;
-2. external controller produced an input event;
+2. external controller produced an input event (or a visual scene diagnostic
+   is active, where controller input is optional);
 3. package candidates were found;
 4. at least one package summary passed structural validation.
 
@@ -123,8 +130,12 @@ The first G5a device capture preserved the room but did not make the actor
 recognizable. A follow-up bounds probe confirmed that the actor was not missing
 or outside the map: its placed bounds are approximately 23×56×88 world units
 inside a BSP whose largest span is 3,487 units. At the full-room scale it uses
-only about 2.5% of that span. G5b therefore adds a controller-only focus view
-without changing the decoded geometry or its world placement.
+only about 2.5% of that span. G5b therefore added a focused view without
+changing the decoded geometry or its world placement. The subsequent Galaxy
+A57 capture clearly showed the textured student model in a coherent base pose,
+so G5b is visually approved. The device had no controller connected; that is
+not a failure because the image itself covers the visual acceptance criterion.
+G5c diagnostics now cycle views automatically for the same reason.
 
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
@@ -136,7 +147,7 @@ without changing the decoded geometry or its world placement.
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G5b-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G5c-dev-debug` from the workflow run's
 **Artifacts** section.
 
 Development APKs from G3a onward use the checked-in, non-production development
@@ -189,7 +200,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
 | G4 | Lightmaps and recognizable room | PASS — visibly confirmed on Galaxy A57 |
-| G5 | Actors, meshes and animation | IN PROGRESS — G5b focused reference-pose validation |
+| G5 | Actors, meshes and animation | IN PROGRESS — G5b visual PASS; G5c inherited decoration meshes |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
 | G8 | Android performance and full controller validation | Pending |

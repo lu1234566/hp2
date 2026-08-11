@@ -135,6 +135,7 @@ public:
         actor_triangle_count_ = 0;
         actor_focus_available_ = false;
         actor_focus_enabled_ = false;
+        actor_focus_manual_ = false;
 
         std::unordered_map<std::int32_t, std::size_t> material_slots;
         for (hp2::DecodedTexture& texture : texture_set.textures) {
@@ -370,7 +371,7 @@ public:
                 actor_focus_available_ = actor_focus_available_ || focus_vertex_count > 0;
             }
         }
-        actor_focus_enabled_ = actor_focus_available_;
+        actor_focus_enabled_ = false;
         if (ready()) {
             UploadMesh();
             UploadTextures();
@@ -383,6 +384,7 @@ public:
 
     void ToggleActorFocus() {
         if (actor_focus_available_) {
+            actor_focus_manual_ = true;
             actor_focus_enabled_ = !actor_focus_enabled_;
             LOGI("G5 actor focus: %s", actor_focus_enabled_ ? "enabled" : "world");
         }
@@ -514,7 +516,7 @@ public:
 
         DrawRect(margin, margin, segment_width, bar_height, {0.18f, 0.70f, 0.45f, 1.0f});
         DrawRect(margin + (segment_width + gap), margin, segment_width, bar_height,
-                 runtime.controller_present()
+                 runtime.controller_present() || has_geometry()
                      ? Color{0.18f, 0.70f, 0.45f, 1.0f}
                      : Color{pulse, pulse * 0.78f, 0.18f, 1.0f});
         DrawRect(margin + 2 * (segment_width + gap), margin, segment_width, bar_height,
@@ -825,8 +827,12 @@ void main() {
                       light_map_texture_id_ != 0 ? light_map_texture_id_ : fallback_texture_id_);
         glUniform1i(light_map_uniform_, 1);
         glBindVertexArray(vertex_array_);
+        const float automatic_phase = std::fmod(std::max(seconds, 0.0f), 14.0f);
+        const bool show_actor_focus = actor_focus_available_
+            && (actor_focus_manual_ ? actor_focus_enabled_
+                                    : (automatic_phase >= 8.0f && automatic_phase < 12.0f));
         for (const DrawBatch& batch : draw_batches_) {
-            if (batch.actor_focus_only != actor_focus_enabled_) {
+            if (batch.actor_focus_only != show_actor_focus) {
                 continue;
             }
             GLuint texture = fallback_texture_id_;
@@ -882,6 +888,7 @@ void main() {
     std::size_t actor_triangle_count_ = 0;
     bool actor_focus_available_ = false;
     bool actor_focus_enabled_ = false;
+    bool actor_focus_manual_ = false;
 };
 
 class AndroidShell {
@@ -1084,8 +1091,10 @@ private:
             LOGE("G5 actor census failed: %s", actors.error.c_str());
         }
         if (actor_meshes.valid) {
-            LOGI("G5 actor meshes ready: candidates=%zu assets=%zu instances=%zu failures=%zu triangles=%zu textured=%zu materials=%zu",
-                 actor_meshes.candidate_instances, actor_meshes.decoded_mesh_assets,
+            LOGI("G5 actor meshes ready: candidates=%zu direct=%zu inherited=%zu classes=%zu defaults=%zu assets=%zu instances=%zu failures=%zu triangles=%zu textured=%zu materials=%zu",
+                 actor_meshes.candidate_instances, actor_meshes.direct_mesh_candidates,
+                 actor_meshes.inherited_mesh_candidates, actor_meshes.class_exports_scanned,
+                 actor_meshes.class_default_streams_found, actor_meshes.decoded_mesh_assets,
                  actor_meshes.decoded_mesh_instances, actor_meshes.failed_mesh_instances,
                  actor_meshes.source_triangles, actor_meshes.textured_triangles,
                  actor_meshes.decoded_materials);

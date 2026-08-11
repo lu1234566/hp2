@@ -7,6 +7,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 namespace hp2 {
@@ -27,7 +28,14 @@ std::string Lowercase(std::string value) {
 
 class PayloadReader {
 public:
-    explicit PayloadReader(const std::vector<std::uint8_t>& bytes) : bytes_(bytes) {}
+    explicit PayloadReader(
+        const std::vector<std::uint8_t>& bytes,
+        std::size_t position = 0
+    ) : bytes_(bytes), position_(position) {
+        if (position_ > bytes_.size()) {
+            throw std::runtime_error("property offset is outside the object payload");
+        }
+    }
 
     std::size_t Tell() const { return position_; }
     std::size_t Remaining() const { return bytes_.size() - position_; }
@@ -138,19 +146,25 @@ std::vector<std::uint8_t> ReadExportPayload(
     return payload;
 }
 
-void SkipArrayIndex(PayloadReader& reader) {
+std::int32_t ReadArrayIndex(PayloadReader& reader) {
     const std::uint8_t first = reader.U8();
-    if (first < 128u) {
-        return;
+    if ((first & 0xc0u) == 0xc0u) {
+        const std::uint8_t second = reader.U8();
+        const std::uint8_t third = reader.U8();
+        const std::uint8_t fourth = reader.U8();
+        return static_cast<std::int32_t>(
+            (static_cast<std::uint32_t>(first & 0x3fu) << 24u)
+            | (static_cast<std::uint32_t>(second) << 16u)
+            | (static_cast<std::uint32_t>(third) << 8u)
+            | static_cast<std::uint32_t>(fourth)
+        );
     }
-    const std::uint8_t second = reader.U8();
-    const std::uint16_t short_value = static_cast<std::uint16_t>(
-        (static_cast<std::uint16_t>(second) << 8u) | first
-    ) & 0x7fffu;
-    if (short_value < 16384u) {
-        return;
+    if ((first & 0x80u) != 0u) {
+        return static_cast<std::int32_t>(
+            (static_cast<std::uint16_t>(first & 0x7fu) << 8u) | reader.U8()
+        );
     }
-    reader.U16();
+    return first;
 }
 
 std::size_t TaggedPropertySize(PayloadReader& reader, std::uint8_t info) {
@@ -174,27 +188,11 @@ std::string NameAt(const PackageIndex& package, std::int32_t index, const char* 
     return package.names[static_cast<std::size_t>(index)].value;
 }
 
-ObjectProperties ReadProperties(
+ObjectProperties ReadTaggedProperties(
     PayloadReader& reader,
-    const PackageIndex& package,
-    const ExportEntry& entry
+    const PackageIndex& package
 ) {
     ObjectProperties result;
-    if ((entry.object_flags & kObjectNative) != 0u) {
-        result.error = "native object property streams are not supported";
-        return result;
-    }
-    if ((entry.object_flags & kObjectHasStack) != 0u) {
-        const std::int32_t node = reader.CompactIndex();
-        reader.CompactIndex();
-        reader.U64();
-        reader.U32();
-        if (node != 0) {
-            reader.CompactIndex();
-        }
-        result.has_state_frame = true;
-    }
-
     for (std::size_t property_index = 0; property_index < kMaxPropertyCount; ++property_index) {
         const std::string property_name = NameAt(
             package, reader.CompactIndex(), "property name index"
@@ -225,14 +223,76 @@ ObjectProperties ReadProperties(
             property.bool_value = (info & 0x80u) != 0u;
         } else {
             if ((info & 0x80u) != 0u) {
-                SkipArrayIndex(reader);
-                property.array_index = 1;
+                property.array_index = ReadArrayIndex(reader);
             }
             property.bytes = reader.Bytes(serialized_size, "tagged property payload");
         }
         result.properties.push_back(std::move(property));
     }
     throw std::runtime_error("tagged property list has no None terminator");
+}
+
+ObjectProperties ReadProperties(
+    PayloadReader& reader,
+    const PackageIndex& package,
+    const ExportEntry& entry
+) {
+    ObjectProperties result;
+    if ((entry.object_flags & kObjectNative) != 0u) {
+        result.error = "native object property streams are not supported";
+        return result;
+    }
+    if ((entry.object_flags & kObjectHasStack) != 0u) {
+        const std::int32_t node = reader.CompactIndex();
+        reader.CompactIndex();
+        reader.U64();
+        reader.U32();
+        if (node != 0) {
+            reader.CompactIndex();
+        }
+        result.has_state_frame = true;
+    }
+    ObjectProperties properties = ReadTaggedProperties(reader, package);
+    properties.has_state_frame = result.has_state_frame;
+    return properties;
+}
+
+bool IsClassDefaultProperty(const std::string& name) {
+    static const std::set<std::string> kNames = {
+        "ambientglow", "bhidden", "collisionheight", "collisionradius",
+        "drawscale", "drawscale3d", "drawtype", "fatness", "mesh",
+        "multiskins", "prepivot", "skin", "staticmesh", "style", "texture"
+    };
+    return kNames.find(Lowercase(name)) != kNames.end();
+}
+
+std::size_t ClassDefaultScore(const ObjectProperties& properties) {
+    std::size_t interesting = 0;
+    std::size_t strongly_typed = 0;
+    for (const SerializedProperty& property : properties.properties) {
+        if (!IsClassDefaultProperty(property.name)) {
+            continue;
+        }
+        ++interesting;
+        const std::string name = Lowercase(property.name);
+        if ((name == "mesh" || name == "staticmesh" || name == "skin")
+            && property.type == 5u) {
+            ++strongly_typed;
+        } else if (name == "drawscale" && property.type == 4u
+                   && property.bytes.size() == 4u) {
+            ++strongly_typed;
+        } else if ((name == "drawscale3d" || name == "prepivot")
+                   && property.type == 10u && property.bytes.size() == 12u) {
+            ++strongly_typed;
+        } else if (name == "bhidden" && property.type == 3u) {
+            ++strongly_typed;
+        }
+    }
+    if (interesting == 0 || strongly_typed == 0) {
+        return 0;
+    }
+    return strongly_typed * 1'000'000u + interesting * 10'000u
+        + properties.properties.size();
 }
 
 const SerializedProperty* FindProperty(
@@ -331,6 +391,125 @@ ObjectProperties LoadObjectProperties(
     }
 }
 
+ObjectProperties ScanClassDefaultProperties(
+    const PackageIndex& package,
+    std::size_t export_index,
+    std::size_t max_scan_bytes
+) {
+    ObjectProperties result;
+    if (!package.valid) {
+        result.error = package.error.empty() ? "package index is invalid" : package.error;
+        return result;
+    }
+    if (package.summary.file_version < 64 || package.summary.file_version >= 100) {
+        result.error = "class-default reader currently supports UE1 versions 64-99";
+        return result;
+    }
+    if (export_index >= package.exports.size()) {
+        result.error = "class export index is outside the export table";
+        return result;
+    }
+    const ExportEntry& entry = package.exports[export_index];
+    if (Lowercase(entry.class_name) != "class") {
+        result.error = "selected export is not a UClass";
+        return result;
+    }
+    if (entry.serial_size <= 0 || entry.serial_offset < 0 || max_scan_bytes == 0) {
+        result.error = "class export has no bounded serialized tail";
+        return result;
+    }
+
+    try {
+        const std::size_t serial_size = static_cast<std::size_t>(entry.serial_size);
+        const std::size_t scan_size = std::min(serial_size, max_scan_bytes);
+        const std::int64_t tail_offset = static_cast<std::int64_t>(entry.serial_offset)
+            + static_cast<std::int64_t>(serial_size - scan_size);
+        if (tail_offset < 0) {
+            throw std::runtime_error("class export tail offset is invalid");
+        }
+        std::ifstream input(package.summary.path, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error("cannot open class package payload");
+        }
+        input.seekg(tail_offset, std::ios::beg);
+        if (!input) {
+            throw std::runtime_error("cannot seek to class package tail");
+        }
+        std::vector<std::uint8_t> tail(scan_size);
+        input.read(reinterpret_cast<char*>(tail.data()), static_cast<std::streamsize>(tail.size()));
+        if (input.gcount() != static_cast<std::streamsize>(tail.size())) {
+            throw std::runtime_error("short read while loading class package tail");
+        }
+
+        std::size_t best_score = 0;
+        std::size_t best_start = tail.size();
+        for (std::size_t candidate_start = 0; candidate_start < tail.size(); ++candidate_start) {
+            try {
+                PayloadReader name_reader(tail, candidate_start);
+                const std::int32_t name_index = name_reader.CompactIndex();
+                if (name_index < 0 || static_cast<std::size_t>(name_index) >= package.names.size()
+                    || !IsClassDefaultProperty(
+                        package.names[static_cast<std::size_t>(name_index)].value
+                    )) {
+                    continue;
+                }
+                PayloadReader reader(tail, candidate_start);
+                ObjectProperties candidate = ReadTaggedProperties(reader, package);
+                if (!candidate.valid || candidate.native_data_offset != tail.size()) {
+                    continue;
+                }
+                const std::size_t score = ClassDefaultScore(candidate);
+                if (score > best_score || (score == best_score && candidate_start < best_start)) {
+                    best_score = score;
+                    best_start = candidate_start;
+                    result = std::move(candidate);
+                }
+            } catch (const std::exception&) {
+                // Bytecode and native class metadata are expected before the default stream.
+            }
+        }
+        if (best_score == 0) {
+            result = {};
+            result.error = "no bounded class-default property tail was found";
+        }
+    } catch (const std::exception& exception) {
+        result = {};
+        result.error = exception.what();
+    }
+    return result;
+}
+
+const SerializedProperty* FindObjectProperty(
+    const ObjectProperties& object,
+    const char* name
+) {
+    return FindProperty(object, name);
+}
+
+bool DecodePropertyVec3(const SerializedProperty* property, Vec3& value) {
+    return DecodeVec3(property, value);
+}
+
+bool DecodePropertyRotator(const SerializedProperty* property, Rotator& value) {
+    return DecodeRotator(property, value);
+}
+
+bool DecodePropertyFloat(const SerializedProperty* property, float& value) {
+    return DecodeFloat(property, value);
+}
+
+bool DecodePropertyBool(const SerializedProperty* property, bool& value) {
+    if (property == nullptr || property->type != 3u) {
+        return false;
+    }
+    value = property->bool_value;
+    return true;
+}
+
+std::int32_t DecodePropertyObjectReference(const SerializedProperty* property) {
+    return DecodeObjectReference(property);
+}
+
 LevelActorCensus LoadLevelActorCensus(const PackageIndex& package) {
     LevelActorCensus result;
     if (!package.valid) {
@@ -390,6 +569,7 @@ LevelActorCensus LoadLevelActorCensus(const PackageIndex& package) {
             actor.object_reference = reference;
             actor.export_index = static_cast<std::size_t>(export_offset);
             const ExportEntry& entry = package.exports[actor.export_index];
+            actor.class_reference = entry.class_index;
             actor.object_name = entry.object_name;
             actor.class_name = entry.class_name;
             ++class_counts[actor.class_name];
@@ -412,7 +592,8 @@ LevelActorCensus LoadLevelActorCensus(const PackageIndex& package) {
                 FindProperty(properties, "DrawScale3D"), actor.draw_scale_3d
             );
             const SerializedProperty* hidden = FindProperty(properties, "bHidden");
-            actor.hidden = hidden != nullptr && hidden->type == 3u && hidden->bool_value;
+            actor.has_hidden = hidden != nullptr && hidden->type == 3u;
+            actor.hidden = actor.has_hidden && hidden->bool_value;
             actor.mesh_reference = DecodeObjectReference(FindProperty(properties, "Mesh"));
             actor.static_mesh_reference = DecodeObjectReference(
                 FindProperty(properties, "StaticMesh")

@@ -124,9 +124,9 @@ model = g2.get("model_geometry", {})
 texture = g2.get("g3_texture", {})
 scene = g2.get("g4_scene", {})
 actors = g2.get("g5_actor_census", {})
-mesh_scene = g2.get("g5_direct_mesh_scene", {})
+mesh_scene = g2.get("g5_mesh_scene", g2.get("g5_direct_mesh_scene", {}))
 summary = {
-    "schema": "hp2-original-disc-probe-v7",
+    "schema": "hp2-original-disc-probe-v8",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -189,10 +189,19 @@ summary = {
     "g5_actor_classes": actors.get("class_inventory", []),
     "g5_direct_mesh_targets": actors.get("mesh_references", []),
     "g5_actor_error": actors.get("error"),
-    "g5_direct_mesh_valid": mesh_scene.get("valid", False),
-    "g5_direct_mesh_candidates": mesh_scene.get("candidate_instances", 0),
+    "g5_mesh_valid": mesh_scene.get("valid", False),
+    "g5_mesh_candidates": mesh_scene.get("candidate_instances", 0),
+    "g5_direct_mesh_candidates": mesh_scene.get("direct_mesh_candidates", 0),
+    "g5_inherited_mesh_candidates": mesh_scene.get("inherited_mesh_candidates", 0),
+    "g5_class_exports_scanned": mesh_scene.get("class_exports_scanned", 0),
+    "g5_class_default_streams_found": mesh_scene.get("class_default_streams_found", 0),
+    "g5_class_default_scan_misses": mesh_scene.get("class_default_scan_misses", 0),
+    "g5_class_resolution_failures": mesh_scene.get("class_resolution_failures", 0),
     "g5_decoded_mesh_assets": mesh_scene.get("decoded_mesh_assets", 0),
     "g5_decoded_mesh_instances": mesh_scene.get("decoded_mesh_instances", 0),
+    "g5_decoded_inherited_mesh_instances": mesh_scene.get(
+        "decoded_inherited_mesh_instances", 0
+    ),
     "g5_failed_mesh_instances": mesh_scene.get("failed_mesh_instances", 0),
     "g5_actor_mesh_triangles": mesh_scene.get("source_triangles", 0),
     "g5_actor_textured_triangles": mesh_scene.get("textured_triangles", 0),

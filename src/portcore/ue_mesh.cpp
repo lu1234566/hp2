@@ -5,10 +5,12 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <map>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace hp2 {
@@ -325,6 +327,45 @@ std::size_t FindObjectExport(
     }
     return fallback;
 }
+
+std::size_t FindClassExport(
+    const PackageIndex& package,
+    const ObjectTarget& target
+) {
+    std::size_t fallback = std::numeric_limits<std::size_t>::max();
+    std::vector<std::string> target_groups = target.groups;
+    for (auto& group : target_groups) {
+        group = Lowercase(group);
+    }
+    for (std::size_t index = 0; index < package.exports.size(); ++index) {
+        const ExportEntry& entry = package.exports[index];
+        if (Lowercase(entry.object_name) != Lowercase(target.object_name)
+            || Lowercase(entry.class_name) != "class") {
+            continue;
+        }
+        if (fallback == std::numeric_limits<std::size_t>::max()) {
+            fallback = index;
+        }
+        std::vector<std::string> groups = ExportGroups(package, entry);
+        for (auto& group : groups) {
+            group = Lowercase(group);
+        }
+        if (groups == target_groups) {
+            return index;
+        }
+    }
+    return fallback;
+}
+
+struct ClassPropertySource {
+    SerializedProperty property;
+    const PackageIndex* package = nullptr;
+};
+
+struct ResolvedClassDefaults {
+    bool resolved = false;
+    std::unordered_map<std::string, ClassPropertySource> properties;
+};
 
 std::unordered_map<std::string, std::filesystem::path> CatalogPackages(
     const std::filesystem::path& root
@@ -730,7 +771,9 @@ ActorMeshScene LoadDirectActorMeshes(
     std::unordered_map<std::string, PackageIndex> packages;
     std::unordered_map<std::string, DecodedVertexMesh> meshes;
     std::unordered_map<std::string, std::int32_t> materials;
-    std::string last_error = "map has no directly referenced renderable actor mesh";
+    std::unordered_map<std::string, ResolvedClassDefaults> class_defaults;
+    std::unordered_map<std::int32_t, ResolvedClassDefaults> actor_class_defaults;
+    std::string last_error = "map has no renderable direct or inherited actor mesh";
 
     auto target_package = [&](const PackageIndex& source, const ObjectTarget& target)
         -> const PackageIndex* {
@@ -747,6 +790,117 @@ ActorMeshScene LoadDirectActorMeshes(
             found = packages.emplace(key, LoadPackageIndex(path->second)).first;
         }
         return &found->second;
+    };
+
+    std::function<ResolvedClassDefaults(
+        const PackageIndex&, std::size_t, std::unordered_set<std::string>&
+    )> resolve_class_defaults;
+    resolve_class_defaults = [&](const PackageIndex& class_package,
+                                 std::size_t class_export_index,
+                                 std::unordered_set<std::string>& visiting)
+        -> ResolvedClassDefaults {
+        const std::string key = class_package.summary.path.generic_string() + "#"
+            + std::to_string(class_export_index);
+        const auto cached = class_defaults.find(key);
+        if (cached != class_defaults.end()) {
+            return cached->second;
+        }
+
+        ResolvedClassDefaults resolved;
+        if (class_export_index >= class_package.exports.size()
+            || !visiting.insert(key).second) {
+            ++result.class_resolution_failures;
+            return resolved;
+        }
+        const ExportEntry& entry = class_package.exports[class_export_index];
+        if (Lowercase(entry.class_name) != "class") {
+            ++result.class_resolution_failures;
+            visiting.erase(key);
+            return resolved;
+        }
+
+        if (entry.super_index != 0) {
+            const ObjectTarget parent_target = ResolveObjectTarget(
+                class_package, entry.super_index
+            );
+            if (parent_target.valid) {
+                const PackageIndex* parent_package = target_package(
+                    class_package, parent_target
+                );
+                if (parent_package != nullptr && parent_package->valid) {
+                    const std::size_t parent_export = FindClassExport(
+                        *parent_package, parent_target
+                    );
+                    if (parent_export != std::numeric_limits<std::size_t>::max()) {
+                        resolved = resolve_class_defaults(
+                            *parent_package, parent_export, visiting
+                        );
+                    } else {
+                        ++result.class_resolution_failures;
+                    }
+                } else {
+                    ++result.class_resolution_failures;
+                }
+            } else {
+                ++result.class_resolution_failures;
+            }
+        }
+
+        if (entry.serial_size > 0) {
+            ++result.class_exports_scanned;
+            const ObjectProperties local = ScanClassDefaultProperties(
+                class_package, class_export_index
+            );
+            if (local.valid) {
+                ++result.class_default_streams_found;
+                for (const SerializedProperty& property : local.properties) {
+                    const std::string property_name = Lowercase(property.name);
+                    if (property_name == "mesh" || property_name == "staticmesh"
+                        || property_name == "prepivot" || property_name == "drawscale"
+                        || property_name == "drawscale3d" || property_name == "bhidden"
+                        || property_name == "skin" || property_name == "multiskins") {
+                        resolved.properties[property_name] = {property, &class_package};
+                    }
+                }
+            } else {
+                ++result.class_default_scan_misses;
+            }
+        }
+        resolved.resolved = true;
+        visiting.erase(key);
+        class_defaults.emplace(key, resolved);
+        return resolved;
+    };
+
+    auto defaults_for_actor = [&](const ActorInstance& actor) -> ResolvedClassDefaults {
+        const auto cached = actor_class_defaults.find(actor.class_reference);
+        if (cached != actor_class_defaults.end()) {
+            return cached->second;
+        }
+        ResolvedClassDefaults resolved;
+        if (actor.class_reference != 0) {
+            const ObjectTarget target = ResolveObjectTarget(
+                map_package, actor.class_reference
+            );
+            if (target.valid) {
+                const PackageIndex* package = target_package(map_package, target);
+                if (package != nullptr && package->valid) {
+                    const std::size_t export_index = FindClassExport(*package, target);
+                    if (export_index != std::numeric_limits<std::size_t>::max()) {
+                        std::unordered_set<std::string> visiting;
+                        resolved = resolve_class_defaults(*package, export_index, visiting);
+                    } else {
+                        ++result.class_resolution_failures;
+                    }
+                } else {
+                    ++result.class_resolution_failures;
+                }
+            } else {
+                ++result.class_resolution_failures;
+            }
+        }
+        actor_class_defaults.emplace(actor.class_reference, resolved);
+        return resolved;
     };
 
     auto material_for = [&](const PackageIndex& source, std::int32_t reference) -> std::int32_t {
@@ -791,17 +945,63 @@ ActorMeshScene LoadDirectActorMeshes(
     };
 
     for (const ActorInstance& actor : actors.actors) {
-        if (actor.mesh_reference == 0) {
+        if (result.triangles.size() >= max_triangles) {
+            break;
+        }
+        ActorInstance effective_actor = actor;
+        const ResolvedClassDefaults defaults = defaults_for_actor(actor);
+        auto default_property = [&](const char* name) -> const ClassPropertySource* {
+            const auto found = defaults.properties.find(name);
+            return found == defaults.properties.end() ? nullptr : &found->second;
+        };
+
+        if (!effective_actor.has_pre_pivot) {
+            const ClassPropertySource* value = default_property("prepivot");
+            effective_actor.has_pre_pivot = value != nullptr
+                && DecodePropertyVec3(&value->property, effective_actor.pre_pivot);
+        }
+        if (!effective_actor.has_draw_scale) {
+            const ClassPropertySource* value = default_property("drawscale");
+            effective_actor.has_draw_scale = value != nullptr
+                && DecodePropertyFloat(&value->property, effective_actor.draw_scale);
+        }
+        if (!effective_actor.has_draw_scale_3d) {
+            const ClassPropertySource* value = default_property("drawscale3d");
+            effective_actor.has_draw_scale_3d = value != nullptr
+                && DecodePropertyVec3(&value->property, effective_actor.draw_scale_3d);
+        }
+        if (!effective_actor.has_hidden) {
+            const ClassPropertySource* value = default_property("bhidden");
+            effective_actor.has_hidden = value != nullptr
+                && DecodePropertyBool(&value->property, effective_actor.hidden);
+        }
+
+        std::int32_t mesh_reference = actor.mesh_reference;
+        const PackageIndex* mesh_reference_package = &map_package;
+        bool inherited_mesh = false;
+        if (mesh_reference == 0) {
+            const ClassPropertySource* value = default_property("mesh");
+            if (value != nullptr) {
+                mesh_reference = DecodePropertyObjectReference(&value->property);
+                mesh_reference_package = value->package;
+                inherited_mesh = mesh_reference != 0;
+            }
+        }
+        if (mesh_reference == 0 || mesh_reference_package == nullptr) {
             continue;
         }
         ++result.candidate_instances;
-        const ObjectTarget target = ResolveObjectTarget(map_package, actor.mesh_reference);
+        result.direct_mesh_candidates += inherited_mesh ? 0u : 1u;
+        result.inherited_mesh_candidates += inherited_mesh ? 1u : 0u;
+        const ObjectTarget target = ResolveObjectTarget(
+            *mesh_reference_package, mesh_reference
+        );
         if (!target.valid) {
             ++result.failed_mesh_instances;
             last_error = target.error;
             continue;
         }
-        const PackageIndex* mesh_package = target_package(map_package, target);
+        const PackageIndex* mesh_package = target_package(*mesh_reference_package, target);
         if (mesh_package == nullptr || !mesh_package->valid) {
             ++result.failed_mesh_instances;
             last_error = "actor mesh package was not found or is invalid";
@@ -844,7 +1044,7 @@ ActorMeshScene LoadDirectActorMeshes(
         }
 
         const std::string actor_class = Lowercase(actor.class_name);
-        if (actor.hidden || !actor.has_location || actor_class == "camera") {
+        if (effective_actor.hidden || actor_class == "camera") {
             continue;
         }
         std::vector<std::int32_t> slot_materials(mesh.texture_references.size(), -1);
@@ -853,6 +1053,7 @@ ActorMeshScene LoadDirectActorMeshes(
         }
 
         ++result.decoded_mesh_instances;
+        result.decoded_inherited_mesh_instances += inherited_mesh ? 1u : 0u;
         for (const VertexMeshTriangle& triangle : mesh.triangles) {
             if (result.triangles.size() >= max_triangles) {
                 break;
@@ -860,7 +1061,7 @@ ActorMeshScene LoadDirectActorMeshes(
             ActorMeshTriangle placed;
             for (std::size_t corner = 0; corner < 3; ++corner) {
                 placed.points[corner] = TransformActorVertex(
-                    mesh.vertices[triangle.indices[corner]], mesh, actor
+                    mesh.vertices[triangle.indices[corner]], mesh, effective_actor
                 );
                 placed.texture_coordinates[corner] = triangle.texture_coordinates[corner];
                 const Vec3& point = placed.points[corner];

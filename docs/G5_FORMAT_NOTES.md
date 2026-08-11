@@ -23,11 +23,11 @@ All counts, compact indices, property sizes and name references are bounded
 before allocation or access. Synthetic version-79 fixtures cover the actor
 array, `StateFrame`, struct, float, bool and object-reference paths.
 
-The 2026-08-11 private run found 309 actor-array references, of which 274 were
+The 2026-08-11 G5a private run found 309 actor-array references, of which 274 were
 non-null and all 274 parsed successfully. It found 266 actors with a location,
 153 with a rotation and two direct `Mesh` references. Most room decoration is
-still inherited through imported class defaults and intentionally remains for a
-later G5 increment.
+inherited through imported class defaults; resolving that separate path is the
+G5c increment described below.
 
 ## Direct mesh formats and placement
 
@@ -67,10 +67,36 @@ to only a few dozen screen pixels.
 
 G5b duplicates the already transformed actor triangles only inside the local
 render buffer and normalizes that duplicate around the measured actor bounds.
-The default device view draws only this enlarged inspection copy. Controller
-button **A** alternates to the unchanged world view, where the original placed
-instance remains depth-tested against the BSP. Both views use the same 616
-triangles, UVs and two decoded materials; no asset data is added to the APK.
+Both views use the same 616 triangles, UVs and two decoded materials; no asset
+data is added to the APK. A 2026-08-11 Galaxy A57 capture clearly showed the
+textured student model in a coherent reference pose, approving G5b visually.
+The phone had no controller connected, so the gold controller bar represented
+only the absent optional input event, not a rendering failure.
 
-G5 is not complete at G5b: class-default decoration meshes, skeletal animation,
-collision and scripted behavior remain separate acceptance steps.
+## G5c inherited class defaults
+
+UE1 level actors usually serialize only values that differ from their class
+defaults. Furniture can therefore have a valid `Location` in `Duel10.unr` but
+no direct `Mesh` tag: its imported `UClass` supplies `Mesh`, `PrePivot`,
+`DrawScale`, `DrawScale3D` and sometimes `bHidden`.
+
+G5c follows the actor's class reference into the external package and walks the
+bounded superclass chain with cycle detection and caching. A `UClass` stores
+its default-property block at the end of its export. The reader examines at
+most the final 64 KiB, considers only candidate offsets named by relevant
+render properties, and accepts a tagged-property stream only when its `None`
+terminator lands exactly at the export end. It never needs to execute or fully
+interpret UnrealScript bytecode. Object references remain paired with the
+package that declared the default so a mesh import is resolved in the correct
+namespace.
+
+A synthetic version-79 fixture verifies an actor whose imported class lives in
+one package and whose inherited mesh lives in another. It also verifies that
+an actor override wins over the class default. The device diagnostic begins in
+the complete room, switches automatically to an object-only view, then returns
+to the room. Controller **A** is retained only as an optional manual override;
+no touch gameplay was added.
+
+G5 is not complete at G5c: inherited mesh coverage still needs the private
+metadata probe and device capture, while skeletal animation, collision and
+scripted behavior remain separate acceptance steps.

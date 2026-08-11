@@ -114,9 +114,8 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
 
     const std::vector<std::string> names = {
         "None", "Core", "Class", "Level", "Decoration", "MyLevel", "Chair0",
-        "Location", "Vector", "Rotation", "Rotator", "Mesh", "DrawScale",
-        "DrawScale3D", "PrePivot", "bHidden", "Package", "MeshPack", "LodMesh",
-        "ChairMesh"
+        "Location", "Vector", "Rotation", "Rotator", "DrawScale3D", "PrePivot",
+        "bHidden", "Package", "ActorClasses"
     };
     const std::size_t name_offset = bytes.size();
     for (const auto& name : names) {
@@ -129,17 +128,13 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
     AppendU32(bytes, 0);
     AppendCompactIndex(bytes, 3);   // Level
     AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 14);  // Package
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 15);  // ActorClasses
+    AppendCompactIndex(bytes, 1);   // Core
     AppendCompactIndex(bytes, 2);   // Class
-    AppendU32(bytes, 0);
+    AppendU32(bytes, 0xfffffffeu);  // ActorClasses import (-2)
     AppendCompactIndex(bytes, 4);   // Decoration
-    AppendCompactIndex(bytes, 1);   // Core
-    AppendCompactIndex(bytes, 16);  // Package
-    AppendU32(bytes, 0);
-    AppendCompactIndex(bytes, 17);  // MeshPack
-    AppendCompactIndex(bytes, 1);   // Core
-    AppendCompactIndex(bytes, 18);  // LodMesh
-    AppendU32(bytes, 0xfffffffdu);  // MeshPack import (-3)
-    AppendCompactIndex(bytes, 19);  // ChairMesh
 
     std::vector<std::uint8_t> level_payload;
     AppendCompactIndex(level_payload, 0);  // None
@@ -165,25 +160,17 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
     AppendU32(actor_payload, 2048);
     AppendU32(actor_payload, 4096);
 
-    AppendCompactIndex(actor_payload, 11);  // Mesh
-    actor_payload.push_back(0x05u);         // Object, one serialized byte
-    AppendCompactIndex(actor_payload, -4);  // ChairMesh import
-
-    AppendCompactIndex(actor_payload, 12);  // DrawScale
-    actor_payload.push_back(0x24u);         // Float, four bytes
-    AppendF32(actor_payload, 1.25f);
-
-    AppendCompactIndex(actor_payload, 13);  // DrawScale3D
+    AppendCompactIndex(actor_payload, 11);  // DrawScale3D
     actor_payload.push_back(0x3au);
     AppendCompactIndex(actor_payload, 8);   // Vector
     AppendVec3(actor_payload, 1.0f, 2.0f, 3.0f);
 
-    AppendCompactIndex(actor_payload, 14);  // PrePivot
+    AppendCompactIndex(actor_payload, 12);  // PrePivot
     actor_payload.push_back(0x3au);
     AppendCompactIndex(actor_payload, 8);   // Vector
     AppendVec3(actor_payload, 4.0f, 5.0f, 6.0f);
 
-    AppendCompactIndex(actor_payload, 15);  // bHidden
+    AppendCompactIndex(actor_payload, 13);  // bHidden
     actor_payload.push_back(0x03u);         // Bool false, no payload
     AppendCompactIndex(actor_payload, 0);   // None
 
@@ -198,7 +185,7 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
             export_table, -1, 5, static_cast<std::int32_t>(level_payload.size()), level_offset
         );
         AppendExportRecord(
-            export_table, -2, 6, static_cast<std::int32_t>(actor_payload.size()), actor_offset,
+            export_table, -3, 6, static_cast<std::int32_t>(actor_payload.size()), actor_offset,
             0x02000001u
         );
         if (export_table.size() == table_size) {
@@ -214,7 +201,68 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
     WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
     WriteU32(bytes, 20, 2);
     WriteU32(bytes, 24, static_cast<std::uint32_t>(export_offset));
-    WriteU32(bytes, 28, 4);
+    WriteU32(bytes, 28, 3);
+    WriteU32(bytes, 32, static_cast<std::uint32_t>(import_offset));
+
+    std::ofstream output(path, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+void WriteSyntheticClassPackage(const std::filesystem::path& path) {
+    std::vector<std::uint8_t> bytes(64, 0);
+    WriteU32(bytes, 0, hp2::kUnrealPackageTag);
+    WriteU16(bytes, 4, 79);
+
+    const std::vector<std::string> names = {
+        "None", "Core", "Class", "Package", "Decoration", "MeshPack",
+        "LodMesh", "ChairMesh", "Mesh", "DrawScale"
+    };
+    const std::size_t name_offset = bytes.size();
+    for (const auto& name : names) {
+        AppendName(bytes, name);
+    }
+
+    const std::size_t import_offset = bytes.size();
+    AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 3);   // Package
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 5);   // MeshPack
+    AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 6);   // LodMesh
+    AppendU32(bytes, 0xffffffffu);  // MeshPack import (-1)
+    AppendCompactIndex(bytes, 7);   // ChairMesh
+
+    std::vector<std::uint8_t> class_payload(48u, 0x51u);
+    AppendCompactIndex(class_payload, 8);   // Mesh
+    class_payload.push_back(0x05u);         // Object, one serialized byte
+    AppendCompactIndex(class_payload, -2);  // ChairMesh import
+    AppendCompactIndex(class_payload, 9);   // DrawScale
+    class_payload.push_back(0x24u);         // Float, four bytes
+    AppendF32(class_payload, 1.25f);
+    AppendCompactIndex(class_payload, 0);   // None
+
+    const std::size_t export_offset = bytes.size();
+    std::size_t table_size = 16;
+    std::vector<std::uint8_t> export_table;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto class_offset = static_cast<std::int32_t>(export_offset + table_size);
+        export_table.clear();
+        AppendExportRecord(
+            export_table, 0, 4, static_cast<std::int32_t>(class_payload.size()), class_offset
+        );
+        if (export_table.size() == table_size) {
+            break;
+        }
+        table_size = export_table.size();
+    }
+    bytes.insert(bytes.end(), export_table.begin(), export_table.end());
+    bytes.insert(bytes.end(), class_payload.begin(), class_payload.end());
+
+    WriteU32(bytes, 12, static_cast<std::uint32_t>(names.size()));
+    WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
+    WriteU32(bytes, 20, 1);
+    WriteU32(bytes, 24, static_cast<std::uint32_t>(export_offset));
+    WriteU32(bytes, 28, 2);
     WriteU32(bytes, 32, static_cast<std::uint32_t>(import_offset));
 
     std::ofstream output(path, std::ios::binary);
@@ -453,6 +501,7 @@ int main() {
     std::filesystem::create_directories(root / "Textures");
     WriteSyntheticTexturePackage(root / "Textures" / "SyntheticTex.utx");
     WriteSyntheticMeshPackage(root / "System" / "MeshPack.u");
+    WriteSyntheticClassPackage(root / "System" / "ActorClasses.u");
     WriteSyntheticActorPackage(root / "Maps" / "SyntheticActors.unr");
 
     std::vector<std::uint8_t> bytes(64, 0);
@@ -687,19 +736,31 @@ int main() {
                  "ULevel actor references and StateFrame properties should decode");
     ok &= Expect(actor_census.actors.size() == 1
                      && actor_census.actors[0].class_name == "Decoration"
+                     && actor_census.actors[0].class_reference == -3
                      && actor_census.actors[0].has_location
                      && actor_census.actors[0].location.x == 10.0f
                      && actor_census.actors[0].has_rotation
                      && actor_census.actors[0].rotation.yaw == 2048,
                  "actor class and transform properties should decode");
-    ok &= Expect(actor_census.actors[0].mesh_reference == -4
-                     && actor_census.actors[0].has_draw_scale
-                     && std::abs(actor_census.actors[0].draw_scale - 1.25f) < 0.0001f
+    ok &= Expect(actor_census.actors[0].mesh_reference == 0
+                     && !actor_census.actors[0].has_draw_scale
                      && actor_census.actors[0].has_draw_scale_3d
                      && actor_census.actors[0].draw_scale_3d.z == 3.0f
                      && actor_census.actors[0].has_pre_pivot
                      && !actor_census.actors[0].hidden,
-                 "actor mesh reference, scale, pivot and bool properties should decode");
+                 "actor overrides should remain distinct from inherited class defaults");
+    const auto class_package = hp2::LoadPackageIndex(root / "System" / "ActorClasses.u");
+    const auto class_defaults = hp2::ScanClassDefaultProperties(class_package, 0);
+    float inherited_scale = 0.0f;
+    ok &= Expect(class_package.valid && class_defaults.valid
+                     && hp2::DecodePropertyObjectReference(
+                         hp2::FindObjectProperty(class_defaults, "Mesh")
+                     ) == -2
+                     && hp2::DecodePropertyFloat(
+                         hp2::FindObjectProperty(class_defaults, "DrawScale"), inherited_scale
+                     )
+                     && std::abs(inherited_scale - 1.25f) < 0.0001f,
+                 "bounded UClass tail scan should recover typed default properties");
     const auto mesh_package = hp2::LoadPackageIndex(root / "System" / "MeshPack.u");
     const auto decoded_mesh = hp2::LoadVertexMeshExport(mesh_package, 0);
     ok &= Expect(decoded_mesh.valid && decoded_mesh.vertices.size() == 3
@@ -709,13 +770,18 @@ int main() {
                  "UE1 Mesh reference-pose geometry should decode");
     const auto actor_mesh_scene = hp2::LoadDirectActorMeshes(root, actor_package, actor_census);
     ok &= Expect(actor_mesh_scene.valid && actor_mesh_scene.candidate_instances == 1
+                     && actor_mesh_scene.direct_mesh_candidates == 0
+                     && actor_mesh_scene.inherited_mesh_candidates == 1
+                     && actor_mesh_scene.class_exports_scanned == 1
+                     && actor_mesh_scene.class_default_streams_found == 1
                      && actor_mesh_scene.decoded_mesh_assets == 1
                      && actor_mesh_scene.decoded_mesh_instances == 1
+                     && actor_mesh_scene.decoded_inherited_mesh_instances == 1
                      && actor_mesh_scene.source_triangles == 1
                      && actor_mesh_scene.triangles.size() == 1
                      && actor_mesh_scene.bounds_valid
                      && actor_mesh_scene.bounds_max.x > actor_mesh_scene.bounds_min.x,
-                 "direct actor Mesh references should resolve and receive the actor transform");
+                 "inherited class Mesh references should resolve and receive the actor transform");
     ok &= Expect(std::isfinite(actor_mesh_scene.triangles[0].points[0].x)
                      && actor_mesh_scene.assets[0].object_name == "ChairMesh",
                  "placed actor triangles and mesh asset summaries should remain bounded");
