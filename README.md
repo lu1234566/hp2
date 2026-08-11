@@ -4,9 +4,13 @@ Clean-room Android runtime for a personal, legitimate copy of **Harry Potter and
 
 The project follows the useful part of the [StS2 Launcher](https://github.com/Ekyso/StS2-Launcher) pattern: the APK contains only open launcher/runtime code, starts without copyrighted game data, validates files installed by the owner, and keeps the original files outside Git. It deliberately omits StS2's Godot, .NET, Steam, Harmony, cloud and touch layers.
 
-## Current gate: G0
+## Current gate: G1 passed; G2 next
 
-G0 is a native proof, not a playable port yet. It provides:
+G0 is the native foundation. G1 verified it against the owner's original disc
+and catalogued all 107 detected packages successfully. This is not a playable
+port yet; G2 is the first real map-geometry milestone.
+
+The current foundation provides:
 
 - C++17 PortCore shared by Android and host tools;
 - Android `GameActivity` shell, OpenGL ES 3 renderer and 16 KB page alignment;
@@ -24,6 +28,19 @@ The bootstrap screen uses four bars, from left to right:
 4. at least one package summary passed structural validation.
 
 The gold square follows the left stick. Press **Start** to rescan the game directory after copying files.
+
+## Original media probe
+
+The original MDF was processed in an ephemeral GitHub Actions runner without
+Google Colab. The run found 42 maps, 53 texture packages, 11 code/content
+packages and one audio bank; all 107 package summaries passed structural
+validation.
+
+- [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
+- [Metadata-only package catalog](docs/hp2-package-catalog.json)
+
+The image and extracted game files were deleted at the end of the run. Only
+package header metadata is committed.
 
 ## Build without Colab
 
@@ -86,9 +103,9 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 
 | Gate | Acceptance criterion | Status |
 |---|---|---|
-| G0 | Native Android shell, gamepad path and package-summary probe | Implemented |
-| G1 | Exact HP2 package/version catalog from the owner's installed data | Blocked on local data probe |
-| G2 | First real HP2 map geometry | Pending |
+| G0 | Native Android shell, gamepad path and package-summary probe | PASS |
+| G1 | Exact HP2 package/version catalog from the owner's original media | PASS — 107/107 packages catalogued |
+| G2 | First real HP2 map geometry | Next |
 | G3 | UVs and real textures | Pending |
 | G4 | Lightmaps and recognizable room | Pending |
 | G5 | Actors, meshes and animation | Pending |
