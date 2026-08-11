@@ -1,3 +1,4 @@
+#include "hp2/ue_actor.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_lightmap.h"
 #include "hp2/ue_package.h"
@@ -44,6 +45,47 @@ void PrintExport(const hp2::ExportEntry& entry, std::size_t index, const char* i
               << "}";
 }
 
+struct ReferenceLabel {
+    std::string package_name;
+    std::string object_name;
+    std::string class_name;
+};
+
+ReferenceLabel ResolveReferenceLabel(const hp2::PackageIndex& package, std::int32_t reference) {
+    ReferenceLabel result;
+    if (reference > 0) {
+        const std::int64_t index = static_cast<std::int64_t>(reference) - 1;
+        if (index >= 0 && static_cast<std::size_t>(index) < package.exports.size()) {
+            const auto& entry = package.exports[static_cast<std::size_t>(index)];
+            result.package_name = package.summary.path.stem().string();
+            result.object_name = entry.object_name;
+            result.class_name = entry.class_name;
+        }
+        return result;
+    }
+    if (reference >= 0) {
+        return result;
+    }
+    const std::int64_t index = -static_cast<std::int64_t>(reference) - 1;
+    if (index < 0 || static_cast<std::size_t>(index) >= package.imports.size()) {
+        return result;
+    }
+    const auto& leaf = package.imports[static_cast<std::size_t>(index)];
+    result.object_name = leaf.object_name;
+    result.class_name = leaf.class_name;
+    std::int32_t outer = leaf.package_index;
+    for (std::size_t depth = 0; outer < 0 && depth < 64; ++depth) {
+        const std::int64_t outer_index = -static_cast<std::int64_t>(outer) - 1;
+        if (outer_index < 0 || static_cast<std::size_t>(outer_index) >= package.imports.size()) {
+            break;
+        }
+        const auto& outer_entry = package.imports[static_cast<std::size_t>(outer_index)];
+        result.package_name = outer_entry.object_name;
+        outer = outer_entry.package_index;
+    }
+    return result;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -75,6 +117,7 @@ int main(int argc, char** argv) {
     hp2::DecodedTexture texture;
     hp2::DecodedTextureSet textures;
     hp2::LightMapAtlas light_maps;
+    const hp2::LevelActorCensus actors = hp2::LoadLevelActorCensus(package);
     const bool texture_probe_requested = argc == 3;
     if (texture_probe_requested && model.valid) {
         texture = hp2::LoadFirstSurfaceTexture(argv[2], package, model);
@@ -85,7 +128,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v3\",\n"
+              << "  \"schema\": \"hp2-map-index-v4\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -160,6 +203,59 @@ int main(int argc, char** argv) {
         std::cout << "\n";
     }
     std::cout << "  },\n"
+              << "  \"g5_actor_census\": {\n"
+              << "    \"valid\": " << (actors.valid ? "true" : "false") << ",\n"
+              << "    \"level_export_index\": " << actors.level_export_index << ",\n"
+              << "    \"level_object_name\": \"" << JsonEscape(actors.level_object_name) << "\",\n"
+              << "    \"actor_references\": " << actors.actor_reference_count << ",\n"
+              << "    \"non_null_actor_references\": " << actors.non_null_actor_references << ",\n"
+              << "    \"parsed_actors\": " << actors.parsed_actor_count << ",\n"
+              << "    \"parse_failures\": " << actors.actor_parse_failures << ",\n"
+              << "    \"actors_with_location\": " << actors.actors_with_location << ",\n"
+              << "    \"actors_with_rotation\": " << actors.actors_with_rotation << ",\n"
+              << "    \"direct_mesh_references\": " << actors.direct_mesh_references << ",\n"
+              << "    \"direct_static_mesh_references\": "
+              << actors.direct_static_mesh_references << ",\n"
+              << "    \"class_inventory\": [\n";
+    for (std::size_t index = 0; index < actors.class_inventory.size(); ++index) {
+        const auto& item = actors.class_inventory[index];
+        std::cout << "      {\"class_name\": \"" << JsonEscape(item.class_name)
+                  << "\", \"count\": " << item.count << "}"
+                  << (index + 1 == actors.class_inventory.size() ? "" : ",") << '\n';
+    }
+    std::cout << "    ],\n    \"mesh_references\": [\n";
+    std::size_t mesh_reference_count = 0;
+    for (const auto& actor : actors.actors) {
+        mesh_reference_count += actor.mesh_reference != 0 ? 1u : 0u;
+        mesh_reference_count += actor.static_mesh_reference != 0 ? 1u : 0u;
+    }
+    std::size_t printed_mesh_references = 0;
+    for (const auto& actor : actors.actors) {
+        for (int property_index = 0; property_index < 2; ++property_index) {
+            const std::int32_t reference = property_index == 0
+                ? actor.mesh_reference : actor.static_mesh_reference;
+            if (reference == 0) {
+                continue;
+            }
+            const ReferenceLabel label = ResolveReferenceLabel(package, reference);
+            std::cout << "      {\"actor_class\": \"" << JsonEscape(actor.class_name)
+                      << "\", \"actor_object\": \"" << JsonEscape(actor.object_name)
+                      << "\", \"property\": \""
+                      << (property_index == 0 ? "Mesh" : "StaticMesh")
+                      << "\", \"reference\": " << reference
+                      << ", \"package_name\": \"" << JsonEscape(label.package_name)
+                      << "\", \"object_name\": \"" << JsonEscape(label.object_name)
+                      << "\", \"class_name\": \"" << JsonEscape(label.class_name) << "\"}"
+                      << (++printed_mesh_references == mesh_reference_count ? "" : ",") << '\n';
+        }
+    }
+    std::cout << "    ]";
+    if (!actors.error.empty()) {
+        std::cout << ",\n    \"error\": \"" << JsonEscape(actors.error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "  },\n"
               << "  \"imports\": [\n";
 
     for (std::size_t index = 0; index < package.imports.size(); ++index) {
@@ -198,5 +294,8 @@ int main(int argc, char** argv) {
     if (texture_probe_requested && (!texture.valid || !textures.valid)) {
         return 5;
     }
-    return texture_probe_requested && !light_maps.valid ? 6 : 0;
+    if (texture_probe_requested && !light_maps.valid) {
+        return 6;
+    }
+    return !actors.valid || actors.parsed_actor_count == 0 ? 7 : 0;
 }

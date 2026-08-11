@@ -1,4 +1,5 @@
 #include "hp2/runtime.h"
+#include "hp2/ue_actor.h"
 #include "hp2/ue_lightmap.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
@@ -93,15 +94,130 @@ void AppendExportRecord(
     std::int32_t class_index,
     std::int32_t object_name_index,
     std::int32_t serial_size,
-    std::int32_t serial_offset
+    std::int32_t serial_offset,
+    std::uint32_t object_flags = 1u
 ) {
     AppendCompactIndex(bytes, class_index);
     AppendCompactIndex(bytes, 0);  // superclass
     AppendU32(bytes, 0);           // outer
     AppendCompactIndex(bytes, object_name_index);
-    AppendU32(bytes, 1);           // object flags
+    AppendU32(bytes, object_flags);
     AppendCompactIndex(bytes, serial_size);
     AppendCompactIndex(bytes, serial_offset);
+}
+
+void WriteSyntheticActorPackage(const std::filesystem::path& path) {
+    std::vector<std::uint8_t> bytes(64, 0);
+    WriteU32(bytes, 0, hp2::kUnrealPackageTag);
+    WriteU16(bytes, 4, 79);
+
+    const std::vector<std::string> names = {
+        "None", "Core", "Class", "Level", "Decoration", "MyLevel", "Chair0",
+        "Location", "Vector", "Rotation", "Rotator", "Mesh", "DrawScale",
+        "DrawScale3D", "PrePivot", "bHidden", "Package", "MeshPack", "LodMesh",
+        "ChairMesh"
+    };
+    const std::size_t name_offset = bytes.size();
+    for (const auto& name : names) {
+        AppendName(bytes, name);
+    }
+
+    const std::size_t import_offset = bytes.size();
+    AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 2);   // Class
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 3);   // Level
+    AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 2);   // Class
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 4);   // Decoration
+    AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 16);  // Package
+    AppendU32(bytes, 0);
+    AppendCompactIndex(bytes, 17);  // MeshPack
+    AppendCompactIndex(bytes, 1);   // Core
+    AppendCompactIndex(bytes, 18);  // LodMesh
+    AppendU32(bytes, 0xfffffffdu);  // MeshPack import (-3)
+    AppendCompactIndex(bytes, 19);  // ChairMesh
+
+    std::vector<std::uint8_t> level_payload;
+    AppendCompactIndex(level_payload, 0);  // None
+    AppendU32(level_payload, 1);           // actor count
+    AppendU32(level_payload, 1);           // actor capacity
+    AppendCompactIndex(level_payload, 2);  // second export
+
+    std::vector<std::uint8_t> actor_payload;
+    AppendCompactIndex(actor_payload, 0);  // StateFrame node
+    AppendCompactIndex(actor_payload, 0);  // StateFrame state node
+    AppendU64(actor_payload, 0);           // probe mask
+    AppendU32(actor_payload, 0);           // latent action
+
+    AppendCompactIndex(actor_payload, 7);  // Location
+    actor_payload.push_back(0x3au);        // Struct, 12 bytes
+    AppendCompactIndex(actor_payload, 8);  // Vector
+    AppendVec3(actor_payload, 10.0f, 20.0f, 30.0f);
+
+    AppendCompactIndex(actor_payload, 9);   // Rotation
+    actor_payload.push_back(0x3au);         // Struct, 12 bytes
+    AppendCompactIndex(actor_payload, 10);  // Rotator
+    AppendU32(actor_payload, 1024);
+    AppendU32(actor_payload, 2048);
+    AppendU32(actor_payload, 4096);
+
+    AppendCompactIndex(actor_payload, 11);  // Mesh
+    actor_payload.push_back(0x05u);         // Object, one serialized byte
+    AppendCompactIndex(actor_payload, -4);  // ChairMesh import
+
+    AppendCompactIndex(actor_payload, 12);  // DrawScale
+    actor_payload.push_back(0x24u);         // Float, four bytes
+    AppendF32(actor_payload, 1.25f);
+
+    AppendCompactIndex(actor_payload, 13);  // DrawScale3D
+    actor_payload.push_back(0x3au);
+    AppendCompactIndex(actor_payload, 8);   // Vector
+    AppendVec3(actor_payload, 1.0f, 2.0f, 3.0f);
+
+    AppendCompactIndex(actor_payload, 14);  // PrePivot
+    actor_payload.push_back(0x3au);
+    AppendCompactIndex(actor_payload, 8);   // Vector
+    AppendVec3(actor_payload, 4.0f, 5.0f, 6.0f);
+
+    AppendCompactIndex(actor_payload, 15);  // bHidden
+    actor_payload.push_back(0x03u);         // Bool false, no payload
+    AppendCompactIndex(actor_payload, 0);   // None
+
+    const std::size_t export_offset = bytes.size();
+    std::size_t table_size = 32;
+    std::vector<std::uint8_t> export_table;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto level_offset = static_cast<std::int32_t>(export_offset + table_size);
+        const auto actor_offset = level_offset + static_cast<std::int32_t>(level_payload.size());
+        export_table.clear();
+        AppendExportRecord(
+            export_table, -1, 5, static_cast<std::int32_t>(level_payload.size()), level_offset
+        );
+        AppendExportRecord(
+            export_table, -2, 6, static_cast<std::int32_t>(actor_payload.size()), actor_offset,
+            0x02000001u
+        );
+        if (export_table.size() == table_size) {
+            break;
+        }
+        table_size = export_table.size();
+    }
+    bytes.insert(bytes.end(), export_table.begin(), export_table.end());
+    bytes.insert(bytes.end(), level_payload.begin(), level_payload.end());
+    bytes.insert(bytes.end(), actor_payload.begin(), actor_payload.end());
+
+    WriteU32(bytes, 12, static_cast<std::uint32_t>(names.size()));
+    WriteU32(bytes, 16, static_cast<std::uint32_t>(name_offset));
+    WriteU32(bytes, 20, 2);
+    WriteU32(bytes, 24, static_cast<std::uint32_t>(export_offset));
+    WriteU32(bytes, 28, 4);
+    WriteU32(bytes, 32, static_cast<std::uint32_t>(import_offset));
+
+    std::ofstream output(path, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
 std::vector<std::uint8_t> MakeTexturePayload(std::int32_t serial_offset) {
@@ -212,6 +328,7 @@ int main() {
     std::filesystem::create_directories(root / "Maps");
     std::filesystem::create_directories(root / "Textures");
     WriteSyntheticTexturePackage(root / "Textures" / "SyntheticTex.utx");
+    WriteSyntheticActorPackage(root / "Maps" / "SyntheticActors.unr");
 
     std::vector<std::uint8_t> bytes(64, 0);
     WriteU32(bytes, 0, hp2::kUnrealPackageTag);
@@ -434,6 +551,30 @@ int main() {
                      && surface_textures.material_candidates == 1
                      && surface_textures.textured_triangles == 2,
                  "all decodable BSP materials should be collected for batched rendering");
+
+    const auto actor_package = hp2::LoadPackageIndex(root / "Maps" / "SyntheticActors.unr");
+    ok &= Expect(actor_package.valid && actor_package.exports.size() == 2,
+                 "synthetic Level and actor exports should parse");
+    const auto actor_census = hp2::LoadLevelActorCensus(actor_package);
+    ok &= Expect(actor_census.valid && actor_census.actor_reference_count == 1
+                     && actor_census.non_null_actor_references == 1
+                     && actor_census.parsed_actor_count == 1,
+                 "ULevel actor references and StateFrame properties should decode");
+    ok &= Expect(actor_census.actors.size() == 1
+                     && actor_census.actors[0].class_name == "Decoration"
+                     && actor_census.actors[0].has_location
+                     && actor_census.actors[0].location.x == 10.0f
+                     && actor_census.actors[0].has_rotation
+                     && actor_census.actors[0].rotation.yaw == 2048,
+                 "actor class and transform properties should decode");
+    ok &= Expect(actor_census.actors[0].mesh_reference == -4
+                     && actor_census.actors[0].has_draw_scale
+                     && std::abs(actor_census.actors[0].draw_scale - 1.25f) < 0.0001f
+                     && actor_census.actors[0].has_draw_scale_3d
+                     && actor_census.actors[0].draw_scale_3d.z == 3.0f
+                     && actor_census.actors[0].has_pre_pivot
+                     && !actor_census.actors[0].hidden,
+                 "actor mesh reference, scale, pivot and bool properties should decode");
 
     hp2::Runtime runtime;
     runtime.Initialize(root);

@@ -12,6 +12,7 @@ set(PORTCORE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../src/portcore")
 add_library(hp2engine SHARED
     platform/android_main.cpp
     "${PORTCORE_ROOT}/runtime.cpp"
+    "${PORTCORE_ROOT}/ue_actor.cpp"
     "${PORTCORE_ROOT}/ue_lightmap.cpp"
     "${PORTCORE_ROOT}/ue_model.cpp"
     "${PORTCORE_ROOT}/ue_package.cpp"

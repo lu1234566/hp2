@@ -123,8 +123,9 @@ g2 = json.loads(g2_path.read_text(encoding="utf-8")) if g2_path.is_file() else {
 model = g2.get("model_geometry", {})
 texture = g2.get("g3_texture", {})
 scene = g2.get("g4_scene", {})
+actors = g2.get("g5_actor_census", {})
 summary = {
-    "schema": "hp2-original-disc-probe-v5",
+    "schema": "hp2-original-disc-probe-v6",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -174,6 +175,19 @@ summary = {
     "g4_atlas_height": scene.get("atlas_height", 0),
     "g4_texture_error": scene.get("texture_error"),
     "g4_lightmap_error": scene.get("lightmap_error"),
+    "g5_actor_census_valid": actors.get("valid", False),
+    "g5_level_object": actors.get("level_object_name"),
+    "g5_actor_references": actors.get("actor_references", 0),
+    "g5_non_null_actor_references": actors.get("non_null_actor_references", 0),
+    "g5_parsed_actors": actors.get("parsed_actors", 0),
+    "g5_actor_parse_failures": actors.get("parse_failures", 0),
+    "g5_actors_with_location": actors.get("actors_with_location", 0),
+    "g5_actors_with_rotation": actors.get("actors_with_rotation", 0),
+    "g5_direct_mesh_references": actors.get("direct_mesh_references", 0),
+    "g5_direct_static_mesh_references": actors.get("direct_static_mesh_references", 0),
+    "g5_actor_classes": actors.get("class_inventory", []),
+    "g5_direct_mesh_targets": actors.get("mesh_references", []),
+    "g5_actor_error": actors.get("error"),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY

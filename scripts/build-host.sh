@@ -7,6 +7,7 @@ mkdir -p "$BUILD_DIR"
 
 common_sources=(
     "$ROOT/src/portcore/runtime.cpp"
+    "$ROOT/src/portcore/ue_actor.cpp"
     "$ROOT/src/portcore/ue_lightmap.cpp"
     "$ROOT/src/portcore/ue_model.cpp"
     "$ROOT/src/portcore/ue_package.cpp"
