@@ -22,6 +22,8 @@ struct BspNode {
     std::int32_t back_index = -1;
     std::int32_t front_index = -1;
     std::int32_t plane_index = -1;
+    std::int32_t back_zone = 0;
+    std::int32_t front_zone = 0;
     std::uint8_t vertex_count = 0;
     std::uint8_t flags = 0;
 };
@@ -33,8 +35,25 @@ struct BspSurface {
     std::int32_t normal_vector_index = 0;
     std::int32_t texture_u_vector_index = 0;
     std::int32_t texture_v_vector_index = 0;
+    std::int32_t light_map_index = -1;
     std::int16_t pan_u = 0;
     std::int16_t pan_v = 0;
+};
+
+struct ModelZone {
+    std::int32_t actor_reference = 0;
+    std::uint64_t connectivity = 0;
+    std::uint64_t visibility = 0;
+};
+
+struct LightMapIndex {
+    std::int32_t data_offset = 0;
+    Vec3 pan;
+    std::int32_t u_clamp = 0;
+    std::int32_t v_clamp = 0;
+    float u_scale = 0.0f;
+    float v_scale = 0.0f;
+    std::int32_t light_actors = -1;
 };
 
 struct BspVertex {
@@ -59,6 +78,10 @@ struct ModelGeometry {
     std::vector<BspNode> nodes;
     std::vector<BspSurface> surfaces;
     std::vector<BspVertex> vertices;
+    std::vector<ModelZone> zones;
+    std::vector<LightMapIndex> light_maps;
+    std::vector<std::uint8_t> light_bits;
+    std::vector<std::int32_t> light_actor_references;
     std::vector<BspTriangle> triangles;
     Vec3 bounds_min;
     Vec3 bounds_max;

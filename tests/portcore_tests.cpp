@@ -1,4 +1,5 @@
 #include "hp2/runtime.h"
+#include "hp2/ue_lightmap.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_package.h"
 #include "hp2/ue_texture.h"
@@ -287,7 +288,7 @@ int main() {
     AppendCompactIndex(model_payload, 0);             // normal vector
     AppendCompactIndex(model_payload, 1);             // texture U vector
     AppendCompactIndex(model_payload, 2);             // texture V vector
-    AppendCompactIndex(model_payload, -1);            // light map
+    AppendCompactIndex(model_payload, 0);             // first light map
     AppendCompactIndex(model_payload, -1);            // source brush polygon
     AppendU16(model_payload, 1);                      // pan U
     AppendU16(model_payload, 0xffffu);                // pan V (-1)
@@ -301,6 +302,24 @@ int main() {
     AppendU32(model_payload, 0);                      // shared sides
     AppendU32(model_payload, 0);                      // zones
     AppendCompactIndex(model_payload, 0);             // Polys object ref
+
+    AppendCompactIndex(model_payload, 1);             // light-map indices
+    AppendU32(model_payload, 0);                      // LightBits offset
+    AppendVec3(model_payload, 0.0f, 0.0f, 0.0f);     // light-map pan
+    AppendCompactIndex(model_payload, 4);             // U clamp
+    AppendCompactIndex(model_payload, 4);             // V clamp
+    AppendF32(model_payload, 1.0f);                   // U scale
+    AppendF32(model_payload, 1.0f);                   // V scale
+    AppendU32(model_payload, 0);                      // first light actor
+
+    AppendCompactIndex(model_payload, 4);             // LightBits bytes
+    model_payload.insert(model_payload.end(), {0x0fu, 0x0fu, 0x05u, 0x0au});
+    AppendCompactIndex(model_payload, 0);             // model bounds
+    AppendCompactIndex(model_payload, 0);             // leaf hulls
+    AppendCompactIndex(model_payload, 0);             // convex leaves
+    AppendCompactIndex(model_payload, 2);             // light actor references
+    AppendCompactIndex(model_payload, 1);             // synthetic light object
+    AppendCompactIndex(model_payload, 0);             // light-list terminator
 
     const std::size_t export_offset = bytes.size();
     AppendCompactIndex(bytes, -1); // class = first import (Model)
@@ -369,6 +388,9 @@ int main() {
                  "triangulated geometry bounds should be computed");
     ok &= Expect(model.surfaces[0].pan_u == 1 && model.surfaces[0].pan_v == -1,
                  "signed BSP texture panning should decode");
+    ok &= Expect(model.surfaces[0].light_map_index == 0 && model.light_maps.size() == 1
+                     && model.light_bits.size() == 4 && model.light_actor_references.size() == 2,
+                 "UE1 light-map indices, bits and actor references should decode");
 
     hp2::TextureCoordinate coordinate;
     ok &= Expect(hp2::ComputeSurfaceTextureCoordinate(model, 0, 2, 2, 2, coordinate),
@@ -376,6 +398,18 @@ int main() {
     ok &= Expect(std::abs(coordinate.u - 1.5f) < 0.0001f
                      && std::abs(coordinate.v - 0.5f) < 0.0001f,
                  "BSP texture coordinate should include base vectors and signed pan");
+
+    const auto light_map_atlas = hp2::BuildVisibilityLightMapAtlas(model, 256);
+    ok &= Expect(light_map_atlas.valid && light_map_atlas.referenced_light_maps == 1
+                     && light_map_atlas.shadow_mask_count == 1
+                     && light_map_atlas.lit_triangles == 2,
+                 "UE1 LightBits should build a bounded visibility-lightmap atlas");
+    hp2::TextureCoordinate light_coordinate;
+    ok &= Expect(hp2::ComputeSurfaceLightMapCoordinate(
+                     model, light_map_atlas, 0, 2, light_coordinate
+                 ) && light_coordinate.u > 0.0f && light_coordinate.u < 1.0f
+                     && light_coordinate.v > 0.0f && light_coordinate.v < 1.0f,
+                 "BSP light-map coordinates should map into the generated atlas");
 
     const auto texture_package = hp2::LoadPackageIndex(root / "Textures" / "SyntheticTex.utx");
     ok &= Expect(texture_package.valid && texture_package.exports.size() == 2,
@@ -395,6 +429,11 @@ int main() {
                      && surface_texture.triangle_count == 2
                      && surface_texture.object_name == "TestTexture",
                  "dominant BSP material should resolve to its external UTX texture");
+    const auto surface_textures = hp2::LoadSurfaceTextures(root, package, model);
+    ok &= Expect(surface_textures.valid && surface_textures.textures.size() == 1
+                     && surface_textures.material_candidates == 1
+                     && surface_textures.textured_triangles == 2,
+                 "all decodable BSP materials should be collected for batched rendering");
 
     hp2::Runtime runtime;
     runtime.Initialize(root);

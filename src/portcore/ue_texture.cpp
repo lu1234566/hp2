@@ -641,6 +641,93 @@ DecodedTexture LoadFirstSurfaceTexture(
     return result;
 }
 
+DecodedTextureSet LoadSurfaceTextures(
+    const std::filesystem::path& game_root,
+    const PackageIndex& map_package,
+    const ModelGeometry& geometry
+) {
+    DecodedTextureSet result;
+    if (!map_package.valid) {
+        result.error = map_package.error.empty() ? "map package index is invalid" : map_package.error;
+        return result;
+    }
+    if (!geometry.valid) {
+        result.error = geometry.error.empty() ? "map geometry is invalid" : geometry.error;
+        return result;
+    }
+
+    std::map<std::int32_t, std::size_t> triangle_counts;
+    for (const BspTriangle& triangle : geometry.triangles) {
+        if (triangle.surface_index < 0
+            || static_cast<std::size_t>(triangle.surface_index) >= geometry.surfaces.size()) {
+            continue;
+        }
+        ++triangle_counts[geometry.surfaces[
+            static_cast<std::size_t>(triangle.surface_index)
+        ].material_index];
+    }
+    result.material_candidates = triangle_counts.size();
+
+    const auto package_catalog = CatalogTexturePackages(game_root);
+    std::unordered_map<std::string, PackageIndex> loaded_packages;
+    std::string last_error = "map has no decodable BSP textures";
+    for (const auto& candidate : triangle_counts) {
+        const MaterialTarget target = ResolveMaterialTarget(map_package, candidate.first);
+        if (!target.valid) {
+            ++result.failed_materials;
+            last_error = target.error;
+            continue;
+        }
+        const PackageIndex* texture_package = nullptr;
+        if (target.embedded) {
+            texture_package = &map_package;
+        } else {
+            const auto path_iterator = package_catalog.find(Lowercase(target.package_name));
+            if (path_iterator == package_catalog.end()) {
+                ++result.failed_materials;
+                last_error = "texture package " + target.package_name + " was not found";
+                continue;
+            }
+            const std::string cache_key = path_iterator->second.generic_string();
+            auto loaded = loaded_packages.find(cache_key);
+            if (loaded == loaded_packages.end()) {
+                loaded = loaded_packages.emplace(
+                    cache_key, LoadPackageIndex(path_iterator->second)
+                ).first;
+            }
+            texture_package = &loaded->second;
+        }
+        if (!texture_package->valid) {
+            ++result.failed_materials;
+            last_error = texture_package->error;
+            continue;
+        }
+        const std::size_t export_index = FindTextureExport(*texture_package, target);
+        if (export_index == std::numeric_limits<std::size_t>::max()) {
+            ++result.failed_materials;
+            last_error = "texture export " + target.object_name + " was not found in "
+                + target.package_name;
+            continue;
+        }
+        DecodedTexture decoded = LoadTextureExport(*texture_package, export_index);
+        if (!decoded.valid) {
+            ++result.failed_materials;
+            last_error = decoded.error;
+            continue;
+        }
+        decoded.map_material_index = candidate.first;
+        decoded.triangle_count = candidate.second;
+        result.textured_triangles += candidate.second;
+        result.rgba_bytes += decoded.rgba_pixels.size();
+        result.textures.push_back(std::move(decoded));
+    }
+    result.valid = !result.textures.empty();
+    if (!result.valid) {
+        result.error = last_error;
+    }
+    return result;
+}
+
 DecodedTexture LoadFirstSurfaceTexture(
     const std::filesystem::path& game_root,
     const std::filesystem::path& map_path,

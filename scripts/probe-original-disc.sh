@@ -122,8 +122,9 @@ probe = json.loads(probe_path.read_text(encoding="utf-8"))
 g2 = json.loads(g2_path.read_text(encoding="utf-8")) if g2_path.is_file() else {}
 model = g2.get("model_geometry", {})
 texture = g2.get("g3_texture", {})
+scene = g2.get("g4_scene", {})
 summary = {
-    "schema": "hp2-original-disc-probe-v4",
+    "schema": "hp2-original-disc-probe-v5",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -156,6 +157,23 @@ summary = {
     "g3_texture_height": texture.get("height", 0),
     "g3_texture_rgba_bytes": texture.get("rgba_bytes", 0),
     "g3_texture_error": texture.get("error"),
+    "g4_texture_set_valid": scene.get("texture_set_valid", False),
+    "g4_material_candidates": scene.get("material_candidates", 0),
+    "g4_decoded_textures": scene.get("decoded_textures", 0),
+    "g4_failed_materials": scene.get("failed_materials", 0),
+    "g4_textured_triangles": scene.get("textured_triangles", 0),
+    "g4_texture_rgba_bytes": scene.get("texture_rgba_bytes", 0),
+    "g4_lightmap_valid": scene.get("lightmap_valid", False),
+    "g4_model_lightmaps": scene.get("model_lightmaps", 0),
+    "g4_light_bits_bytes": scene.get("light_bits_bytes", 0),
+    "g4_referenced_lightmaps": scene.get("referenced_lightmaps", 0),
+    "g4_shadow_masks": scene.get("shadow_masks", 0),
+    "g4_lit_surfaces": scene.get("lit_surfaces", 0),
+    "g4_lit_triangles": scene.get("lit_triangles", 0),
+    "g4_atlas_width": scene.get("atlas_width", 0),
+    "g4_atlas_height": scene.get("atlas_height", 0),
+    "g4_texture_error": scene.get("texture_error"),
+    "g4_lightmap_error": scene.get("lightmap_error"),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY

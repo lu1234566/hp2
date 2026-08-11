@@ -30,6 +30,16 @@ struct DecodedTexture {
     std::string error;
 };
 
+struct DecodedTextureSet {
+    std::vector<DecodedTexture> textures;
+    std::size_t material_candidates = 0;
+    std::size_t textured_triangles = 0;
+    std::size_t failed_materials = 0;
+    std::size_t rgba_bytes = 0;
+    bool valid = false;
+    std::string error;
+};
+
 bool ComputeSurfaceTextureCoordinate(
     const ModelGeometry& geometry,
     std::int32_t surface_index,
@@ -42,6 +52,12 @@ bool ComputeSurfaceTextureCoordinate(
 DecodedTexture LoadTextureExport(const PackageIndex& package, std::size_t export_index);
 
 DecodedTexture LoadFirstSurfaceTexture(
+    const std::filesystem::path& game_root,
+    const PackageIndex& map_package,
+    const ModelGeometry& geometry
+);
+
+DecodedTextureSet LoadSurfaceTextures(
     const std::filesystem::path& game_root,
     const PackageIndex& map_package,
     const ModelGeometry& geometry

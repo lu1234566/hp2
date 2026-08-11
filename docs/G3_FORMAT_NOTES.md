@@ -29,5 +29,7 @@ ephemeral runner. The G3a probe passed against the original data and selected
 `WizardDuel.DumbleWood_WD`: a 128×128 P8 texture using `Palette42`. It expands
 to 65,536 RGBA bytes and is referenced by 514 valid `Duel10` triangles. The
 workflow publishes only those names, dimensions and counts; it never publishes
-pixel data. G3 passes only after this original texture is visibly confirmed on
-the target Galaxy A57.
+pixel data. On 2026-08-11 the target Galaxy A57 visibly showed the original
+reddish-brown beam/frame texture on the real `Duel10` BSP while unrelated
+surfaces retained the diagnostic shading. That device evidence closes G3 as
+PASS.

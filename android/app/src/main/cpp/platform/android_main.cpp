@@ -1,4 +1,5 @@
 #include "hp2/runtime.h"
+#include "hp2/ue_lightmap.h"
 #include "hp2/ue_model.h"
 #include "hp2/ue_texture.h"
 
@@ -21,6 +22,8 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #define LOG_TAG "HP2Engine"
@@ -114,22 +117,44 @@ std::optional<std::filesystem::path> FindMap(
 
 class BootstrapRenderer {
 public:
-    void SetScene(const hp2::ModelGeometry& geometry, const hp2::DecodedTexture& texture) {
+    void SetScene(
+        const hp2::ModelGeometry& geometry,
+        hp2::DecodedTextureSet texture_set,
+        hp2::LightMapAtlas light_maps
+    ) {
         mesh_vertices_.clear();
-        texture_pixels_.clear();
-        texture_width_ = 0;
-        texture_height_ = 0;
-        if (texture.valid && texture.width > 0 && texture.height > 0
-            && texture.rgba_pixels.size() == static_cast<std::size_t>(texture.width)
-                * static_cast<std::size_t>(texture.height) * 4u) {
-            texture_pixels_ = texture.rgba_pixels;
-            texture_width_ = texture.width;
-            texture_height_ = texture.height;
+        draw_batches_.clear();
+        textures_.clear();
+        light_map_pixels_.clear();
+        light_map_width_ = 0;
+        light_map_height_ = 0;
+
+        std::unordered_map<std::int32_t, std::size_t> material_slots;
+        for (hp2::DecodedTexture& texture : texture_set.textures) {
+            if (!texture.valid || texture.width <= 0 || texture.height <= 0
+                || texture.rgba_pixels.size() != static_cast<std::size_t>(texture.width)
+                    * static_cast<std::size_t>(texture.height) * 4u) {
+                continue;
+            }
+            const std::size_t slot = textures_.size();
+            material_slots.emplace(texture.map_material_index, slot);
+            textures_.push_back({
+                texture.width,
+                texture.height,
+                std::move(texture.rgba_pixels)
+            });
+        }
+        if (light_maps.valid && light_maps.width > 0 && light_maps.height > 0
+            && light_maps.rgba_pixels.size() == static_cast<std::size_t>(light_maps.width)
+                * static_cast<std::size_t>(light_maps.height) * 4u) {
+            light_map_pixels_ = std::move(light_maps.rgba_pixels);
+            light_map_width_ = light_maps.width;
+            light_map_height_ = light_maps.height;
         }
         if (!geometry.valid || geometry.triangles.empty()) {
             if (ready()) {
                 UploadMesh();
-                UploadTexture();
+                UploadTextures();
             }
             return;
         }
@@ -147,43 +172,90 @@ public:
             return;
         }
         const float scale = 1.75f / largest_extent;
-        mesh_vertices_.reserve(geometry.triangles.size() * 18u);
+        std::vector<std::vector<const hp2::BspTriangle*>> groups(textures_.size() + 1u);
         for (const hp2::BspTriangle& triangle : geometry.triangles) {
-            const std::array<std::uint32_t, 3> indices = {triangle.a, triangle.b, triangle.c};
-            std::array<hp2::TextureCoordinate, 3> coordinates{};
-            bool textured = texture.valid && triangle.surface_index >= 0
-                && static_cast<std::size_t>(triangle.surface_index) < geometry.surfaces.size()
-                && geometry.surfaces[static_cast<std::size_t>(triangle.surface_index)].material_index
-                    == texture.map_material_index;
-            if (textured) {
-                for (std::size_t corner = 0; corner < indices.size(); ++corner) {
-                    textured = hp2::ComputeSurfaceTextureCoordinate(
-                        geometry, triangle.surface_index, indices[corner],
-                        texture.width, texture.height, coordinates[corner]
-                    );
-                    if (!textured) {
-                        break;
+            std::size_t group = 0;
+            if (triangle.surface_index >= 0
+                && static_cast<std::size_t>(triangle.surface_index) < geometry.surfaces.size()) {
+                const std::int32_t material = geometry.surfaces[
+                    static_cast<std::size_t>(triangle.surface_index)
+                ].material_index;
+                const auto found = material_slots.find(material);
+                if (found != material_slots.end()) {
+                    group = found->second + 1u;
+                }
+            }
+            groups[group].push_back(&triangle);
+        }
+
+        mesh_vertices_.reserve(geometry.triangles.size() * 27u);
+        for (std::size_t group = 0; group < groups.size(); ++group) {
+            if (groups[group].empty()) {
+                continue;
+            }
+            const std::int32_t texture_slot = group == 0
+                ? -1 : static_cast<std::int32_t>(group - 1u);
+            const std::size_t first_vertex = mesh_vertices_.size() / 9u;
+            for (const hp2::BspTriangle* triangle : groups[group]) {
+                const std::array<std::uint32_t, 3> indices = {
+                    triangle->a, triangle->b, triangle->c
+                };
+                std::array<hp2::TextureCoordinate, 3> base_coordinates{};
+                std::array<hp2::TextureCoordinate, 3> light_coordinates{};
+                bool textured = texture_slot >= 0;
+                bool lightmapped = !light_map_pixels_.empty();
+                if (textured) {
+                    const CpuTexture& texture = textures_[static_cast<std::size_t>(texture_slot)];
+                    for (std::size_t corner = 0; corner < indices.size(); ++corner) {
+                        if (!hp2::ComputeSurfaceTextureCoordinate(
+                                geometry, triangle->surface_index, indices[corner],
+                                texture.width, texture.height, base_coordinates[corner]
+                            )) {
+                            textured = false;
+                            break;
+                        }
                     }
                 }
-            }
-            for (std::size_t corner = 0; corner < indices.size(); ++corner) {
-                const std::uint32_t point_index = indices[corner];
-                if (point_index >= geometry.points.size()) {
-                    mesh_vertices_.clear();
-                    return;
+                if (lightmapped) {
+                    for (std::size_t corner = 0; corner < indices.size(); ++corner) {
+                        if (!hp2::ComputeSurfaceLightMapCoordinate(
+                                geometry, light_maps, triangle->surface_index,
+                                indices[corner], light_coordinates[corner]
+                            )) {
+                            lightmapped = false;
+                            break;
+                        }
+                    }
                 }
-                const hp2::Vec3& point = geometry.points[point_index];
-                mesh_vertices_.push_back((point.x - center.x) * scale);
-                mesh_vertices_.push_back((point.y - center.y) * scale);
-                mesh_vertices_.push_back((point.z - center.z) * scale);
-                mesh_vertices_.push_back(coordinates[corner].u);
-                mesh_vertices_.push_back(coordinates[corner].v);
-                mesh_vertices_.push_back(textured ? 1.0f : 0.0f);
+                for (std::size_t corner = 0; corner < indices.size(); ++corner) {
+                    const std::uint32_t point_index = indices[corner];
+                    if (point_index >= geometry.points.size()) {
+                        mesh_vertices_.clear();
+                        draw_batches_.clear();
+                        return;
+                    }
+                    const hp2::Vec3& point = geometry.points[point_index];
+                    mesh_vertices_.push_back((point.x - center.x) * scale);
+                    mesh_vertices_.push_back((point.y - center.y) * scale);
+                    mesh_vertices_.push_back((point.z - center.z) * scale);
+                    mesh_vertices_.push_back(base_coordinates[corner].u);
+                    mesh_vertices_.push_back(base_coordinates[corner].v);
+                    mesh_vertices_.push_back(light_coordinates[corner].u);
+                    mesh_vertices_.push_back(light_coordinates[corner].v);
+                    mesh_vertices_.push_back(textured ? 1.0f : 0.0f);
+                    mesh_vertices_.push_back(lightmapped ? 1.0f : 0.0f);
+                }
             }
+            const std::size_t vertex_count = mesh_vertices_.size() / 9u - first_vertex;
+            draw_batches_.push_back({
+                static_cast<GLint>(first_vertex),
+                static_cast<GLsizei>(vertex_count),
+                texture_slot
+            });
         }
         if (ready()) {
             UploadMesh();
-            UploadTexture();
+            UploadTextures();
         }
     }
 
@@ -244,15 +316,15 @@ public:
         eglQuerySurface(display_, surface_, EGL_HEIGHT, &height_);
         eglSwapInterval(display_, 1);
         if (!InitializePipeline()) {
-            LOGE("G3 mesh pipeline initialization failed");
+            LOGE("G4 mesh pipeline initialization failed");
             Shutdown();
             return false;
         }
         UploadMesh();
-        UploadTexture();
-        LOGI("G3 renderer ready: %dx%d, %s, mesh_vertices=%d, texture=%dx%d", width_, height_,
-             reinterpret_cast<const char*>(glGetString(GL_VERSION)), mesh_vertex_count_,
-             texture_width_, texture_height_);
+        UploadTextures();
+        LOGI("G4 renderer ready: %dx%d, %s, mesh_vertices=%d, textures=%zu, lightmap=%dx%d",
+             width_, height_, reinterpret_cast<const char*>(glGetString(GL_VERSION)),
+             mesh_vertex_count_, textures_.size(), light_map_width_, light_map_height_);
         return true;
     }
 
@@ -348,6 +420,18 @@ private:
         float alpha;
     };
 
+    struct CpuTexture {
+        std::int32_t width = 0;
+        std::int32_t height = 0;
+        std::vector<std::uint8_t> pixels;
+    };
+
+    struct DrawBatch {
+        GLint first = 0;
+        GLsizei count = 0;
+        std::int32_t texture_slot = -1;
+    };
+
     static GLuint CompileShader(GLenum type, const char* source) {
         const GLuint shader = glCreateShader(type);
         glShaderSource(shader, 1, &source, nullptr);
@@ -368,12 +452,16 @@ private:
         static constexpr char kVertexShader[] = R"glsl(#version 300 es
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec2 aTexCoord;
-layout(location = 2) in float aTextured;
+layout(location = 2) in vec2 aLightCoord;
+layout(location = 3) in float aTextured;
+layout(location = 4) in float aLightmapped;
 uniform float uYaw;
 uniform float uAspect;
 out float vHeight;
 out highp vec2 vTexCoord;
+out highp vec2 vLightCoord;
 out float vTextured;
+out float vLightmapped;
 void main() {
     float c = cos(uYaw);
     float s = sin(uYaw);
@@ -387,22 +475,31 @@ void main() {
     gl_Position = vec4(x * 0.92, y * 0.92, rotated.y * 0.35, 1.0);
     vHeight = clamp(aPosition.z * 0.55 + 0.5, 0.0, 1.0);
     vTexCoord = aTexCoord;
+    vLightCoord = aLightCoord;
     vTextured = aTextured;
+    vLightmapped = aLightmapped;
 }
 )glsl";
         static constexpr char kFragmentShader[] = R"glsl(#version 300 es
 precision mediump float;
 in float vHeight;
 in highp vec2 vTexCoord;
+in highp vec2 vLightCoord;
 in float vTextured;
+in float vLightmapped;
 uniform sampler2D uTexture;
+uniform sampler2D uLightMap;
 out vec4 outColor;
 void main() {
     vec3 low = vec3(0.10, 0.42, 0.34);
     vec3 high = vec3(0.86, 0.69, 0.29);
     vec3 diagnostic = mix(low, high, vHeight);
     vec3 original = texture(uTexture, vTexCoord).rgb;
-    outColor = vec4(vTextured > 0.5 ? original : diagnostic, 1.0);
+    vec3 base = vTextured > 0.5 ? original : diagnostic;
+    vec3 lighting = vLightmapped > 0.5
+        ? clamp(texture(uLightMap, vLightCoord).rgb, vec3(0.18), vec3(1.0))
+        : vec3(1.0);
+    outColor = vec4(base * lighting, 1.0);
 }
 )glsl";
 
@@ -438,7 +535,9 @@ void main() {
         yaw_uniform_ = glGetUniformLocation(program_, "uYaw");
         aspect_uniform_ = glGetUniformLocation(program_, "uAspect");
         texture_uniform_ = glGetUniformLocation(program_, "uTexture");
-        return yaw_uniform_ >= 0 && aspect_uniform_ >= 0 && texture_uniform_ >= 0;
+        light_map_uniform_ = glGetUniformLocation(program_, "uLightMap");
+        return yaw_uniform_ >= 0 && aspect_uniform_ >= 0 && texture_uniform_ >= 0
+            && light_map_uniform_ >= 0;
     }
 
     void DestroyPipeline() {
@@ -450,9 +549,17 @@ void main() {
             glDeleteVertexArrays(1, &vertex_array_);
             vertex_array_ = 0;
         }
-        if (texture_id_ != 0) {
-            glDeleteTextures(1, &texture_id_);
-            texture_id_ = 0;
+        if (!texture_ids_.empty()) {
+            glDeleteTextures(static_cast<GLsizei>(texture_ids_.size()), texture_ids_.data());
+            texture_ids_.clear();
+        }
+        if (fallback_texture_id_ != 0) {
+            glDeleteTextures(1, &fallback_texture_id_);
+            fallback_texture_id_ = 0;
+        }
+        if (light_map_texture_id_ != 0) {
+            glDeleteTextures(1, &light_map_texture_id_);
+            light_map_texture_id_ = 0;
         }
         if (program_ != 0) {
             glDeleteProgram(program_);
@@ -462,28 +569,65 @@ void main() {
         yaw_uniform_ = -1;
         aspect_uniform_ = -1;
         texture_uniform_ = -1;
+        light_map_uniform_ = -1;
     }
 
-    void UploadTexture() {
-        if (texture_id_ != 0) {
-            glDeleteTextures(1, &texture_id_);
-            texture_id_ = 0;
+    void UploadTextures() {
+        if (!texture_ids_.empty()) {
+            glDeleteTextures(static_cast<GLsizei>(texture_ids_.size()), texture_ids_.data());
+            texture_ids_.clear();
         }
-        if (program_ == 0 || texture_pixels_.empty() || texture_width_ <= 0 || texture_height_ <= 0) {
+        if (fallback_texture_id_ != 0) {
+            glDeleteTextures(1, &fallback_texture_id_);
+            fallback_texture_id_ = 0;
+        }
+        if (light_map_texture_id_ != 0) {
+            glDeleteTextures(1, &light_map_texture_id_);
+            light_map_texture_id_ = 0;
+        }
+        if (program_ == 0) {
             return;
         }
-        glGenTextures(1, &texture_id_);
-        glBindTexture(GL_TEXTURE_2D, texture_id_);
+
+        const std::array<std::uint8_t, 4> white = {255u, 255u, 255u, 255u};
+        glGenTextures(1, &fallback_texture_id_);
+        glBindTexture(GL_TEXTURE_2D, fallback_texture_id_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture_width_, texture_height_, 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, texture_pixels_.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, white.data());
+
+        texture_ids_.resize(textures_.size());
+        if (!texture_ids_.empty()) {
+            glGenTextures(static_cast<GLsizei>(texture_ids_.size()), texture_ids_.data());
+        }
+        for (std::size_t index = 0; index < textures_.size(); ++index) {
+            const CpuTexture& texture = textures_[index];
+            glBindTexture(GL_TEXTURE_2D, texture_ids_[index]);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, texture.pixels.data());
+        }
+
+        if (!light_map_pixels_.empty() && light_map_width_ > 0 && light_map_height_ > 0) {
+            glGenTextures(1, &light_map_texture_id_);
+            glBindTexture(GL_TEXTURE_2D, light_map_texture_id_);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, light_map_width_, light_map_height_, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, light_map_pixels_.data());
+        }
         glBindTexture(GL_TEXTURE_2D, 0);
-        LOGI("G3 original texture uploaded: %dx%d, rgba_bytes=%zu",
-             texture_width_, texture_height_, texture_pixels_.size());
+        LOGI("G4 textures uploaded: materials=%zu lightmap=%dx%d lightmap_rgba=%zu",
+             texture_ids_.size(), light_map_width_, light_map_height_, light_map_pixels_.size());
     }
 
     void UploadMesh() {
@@ -500,9 +644,9 @@ void main() {
             return;
         }
 
-        const std::size_t count = mesh_vertices_.size() / 6u;
+        const std::size_t count = mesh_vertices_.size() / 9u;
         if (count > static_cast<std::size_t>(std::numeric_limits<GLsizei>::max())) {
-            LOGE("G3 mesh has too many vertices for OpenGL ES");
+            LOGE("G4 mesh has too many vertices for OpenGL ES");
             return;
         }
         glGenVertexArrays(1, &vertex_array_);
@@ -513,18 +657,24 @@ void main() {
                      static_cast<GLsizeiptr>(mesh_vertices_.size() * sizeof(float)),
                      mesh_vertices_.data(), GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), nullptr);
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float),
                               reinterpret_cast<void*>(3 * sizeof(float)));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 9 * sizeof(float),
                               reinterpret_cast<void*>(5 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float),
+                              reinterpret_cast<void*>(7 * sizeof(float)));
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, 9 * sizeof(float),
+                              reinterpret_cast<void*>(8 * sizeof(float)));
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
         mesh_vertex_count_ = static_cast<GLsizei>(count);
-        LOGI("G3 BSP mesh uploaded: vertices=%d triangles=%d",
-             mesh_vertex_count_, mesh_vertex_count_ / 3);
+        LOGI("G4 BSP mesh uploaded: vertices=%d triangles=%d batches=%zu",
+             mesh_vertex_count_, mesh_vertex_count_ / 3, draw_batches_.size());
     }
 
     void DrawGeometry(float seconds, float controller_yaw) {
@@ -541,11 +691,26 @@ void main() {
             ? static_cast<float>(width_) / static_cast<float>(height_)
             : 1.0f);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture_id_);
         glUniform1i(texture_uniform_, 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D,
+                      light_map_texture_id_ != 0 ? light_map_texture_id_ : fallback_texture_id_);
+        glUniform1i(light_map_uniform_, 1);
         glBindVertexArray(vertex_array_);
-        glDrawArrays(GL_TRIANGLES, 0, mesh_vertex_count_);
+        for (const DrawBatch& batch : draw_batches_) {
+            GLuint texture = fallback_texture_id_;
+            if (batch.texture_slot >= 0
+                && static_cast<std::size_t>(batch.texture_slot) < texture_ids_.size()) {
+                texture = texture_ids_[static_cast<std::size_t>(batch.texture_slot)];
+            }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
+        }
         glBindVertexArray(0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, 0);
         glUseProgram(0);
     }
@@ -568,15 +733,20 @@ void main() {
     GLuint program_ = 0;
     GLuint vertex_array_ = 0;
     GLuint vertex_buffer_ = 0;
-    GLuint texture_id_ = 0;
+    std::vector<GLuint> texture_ids_;
+    GLuint fallback_texture_id_ = 0;
+    GLuint light_map_texture_id_ = 0;
     GLint yaw_uniform_ = -1;
     GLint aspect_uniform_ = -1;
     GLint texture_uniform_ = -1;
+    GLint light_map_uniform_ = -1;
     GLsizei mesh_vertex_count_ = 0;
     std::vector<float> mesh_vertices_;
-    std::vector<std::uint8_t> texture_pixels_;
-    GLsizei texture_width_ = 0;
-    GLsizei texture_height_ = 0;
+    std::vector<DrawBatch> draw_batches_;
+    std::vector<CpuTexture> textures_;
+    std::vector<std::uint8_t> light_map_pixels_;
+    GLsizei light_map_width_ = 0;
+    GLsizei light_map_height_ = 0;
 };
 
 class AndroidShell {
@@ -721,9 +891,8 @@ private:
         const auto map_path = FindMap(game_root_, "duel10.unr");
         if (!map_path.has_value()) {
             geometry_ = {};
-            texture_ = {};
-            renderer_.SetScene(geometry_, texture_);
-            LOGI("G3 Duel10.unr is not installed; keeping diagnostic renderer");
+            renderer_.SetScene(geometry_, {}, {});
+            LOGI("G4 Duel10.unr is not installed; keeping diagnostic renderer");
             return;
         }
         const hp2::PackageIndex map_package = hp2::LoadPackageIndex(*map_path);
@@ -736,24 +905,34 @@ private:
                 ? "package contains no serialized Model export"
                 : map_package.error;
         }
-        texture_ = hp2::LoadFirstSurfaceTexture(game_root_, map_package, geometry_);
-        renderer_.SetScene(geometry_, texture_);
+        hp2::DecodedTextureSet textures = hp2::LoadSurfaceTextures(
+            game_root_, map_package, geometry_
+        );
+        hp2::LightMapAtlas light_maps = hp2::BuildVisibilityLightMapAtlas(geometry_);
         if (geometry_.valid) {
-            LOGI("G3 BSP ready: map=%s model=%s points=%zu nodes=%zu triangles=%zu",
+            LOGI("G4 BSP ready: map=%s model=%s points=%zu nodes=%zu triangles=%zu",
                  map_path->c_str(), geometry_.object_name.c_str(), geometry_.points.size(),
                  geometry_.nodes.size(), geometry_.triangles.size());
-            if (texture_.valid) {
-                LOGI("G3 texture ready: package=%s object=%s palette=%s size=%dx%d triangles=%zu",
-                     texture_.package_name.c_str(), texture_.object_name.c_str(),
-                     texture_.palette_name.c_str(), texture_.width, texture_.height,
-                     texture_.triangle_count);
+            if (textures.valid) {
+                LOGI("G4 material set ready: textures=%zu candidates=%zu failed=%zu triangles=%zu rgba=%zu",
+                     textures.textures.size(), textures.material_candidates,
+                     textures.failed_materials, textures.textured_triangles, textures.rgba_bytes);
             } else {
-                LOGE("G3 texture decode failed: %s", texture_.error.c_str());
+                LOGE("G4 material-set decode failed: %s", textures.error.c_str());
+            }
+            if (light_maps.valid) {
+                LOGI("G4 lightmaps ready: model=%zu referenced=%zu masks=%zu surfaces=%zu triangles=%zu atlas=%dx%d",
+                     geometry_.light_maps.size(), light_maps.referenced_light_maps,
+                     light_maps.shadow_mask_count, light_maps.lit_surfaces,
+                     light_maps.lit_triangles, light_maps.width, light_maps.height);
+            } else {
+                LOGE("G4 lightmap decode failed: %s", light_maps.error.c_str());
             }
         } else {
-            LOGE("G3 BSP decode failed: map=%s error=%s",
+            LOGE("G4 BSP decode failed: map=%s error=%s",
                  map_path->c_str(), geometry_.error.c_str());
         }
+        renderer_.SetScene(geometry_, std::move(textures), std::move(light_maps));
     }
 
     void LogCatalog() const {
@@ -767,7 +946,6 @@ private:
     std::filesystem::path game_root_;
     hp2::Runtime runtime_;
     hp2::ModelGeometry geometry_;
-    hp2::DecodedTexture texture_;
     BootstrapRenderer renderer_;
 };
 

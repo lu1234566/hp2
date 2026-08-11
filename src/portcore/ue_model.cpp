@@ -14,6 +14,7 @@ namespace {
 constexpr std::uint32_t kObjectHasStack = 0x02000000u;
 constexpr std::uint32_t kObjectNative = 0x04000000u;
 constexpr std::int32_t kMaxArrayEntries = 2'000'000;
+constexpr std::size_t kMaxLightBitBytes = 256u * 1024u * 1024u;
 
 std::string Lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
@@ -385,8 +386,8 @@ ModelGeometry LoadModelGeometry(const PackageIndex& package, std::size_t export_
             node.plane_index = reader.CompactIndex();
             reader.CompactIndex();  // collision bound
             reader.CompactIndex();  // render bound
-            reader.CompactIndex();  // back zone
-            reader.CompactIndex();  // front zone
+            node.back_zone = reader.CompactIndex();
+            node.front_zone = reader.CompactIndex();
             node.vertex_count = reader.U8();
             reader.I32();           // back leaf
             reader.I32();           // front leaf
@@ -406,7 +407,7 @@ ModelGeometry LoadModelGeometry(const PackageIndex& package, std::size_t export_
             surface.normal_vector_index = reader.CompactIndex();
             surface.texture_u_vector_index = reader.CompactIndex();
             surface.texture_v_vector_index = reader.CompactIndex();
-            reader.CompactIndex();  // light-map index
+            surface.light_map_index = reader.CompactIndex();
             reader.CompactIndex();  // source brush polygon
             surface.pan_u = static_cast<std::int16_t>(reader.U16());
             surface.pan_v = static_cast<std::int16_t>(reader.U16());
@@ -425,12 +426,76 @@ ModelGeometry LoadModelGeometry(const PackageIndex& package, std::size_t export_
         if (zone_count < 0 || zone_count > 64) {
             throw std::runtime_error("model zone count exceeds the UE1 limit");
         }
+        result.zones.reserve(static_cast<std::size_t>(zone_count));
         for (std::int32_t index = 0; index < zone_count; ++index) {
-            reader.CompactIndex();
-            reader.U64();
-            reader.U64();
+            ModelZone zone;
+            zone.actor_reference = reader.CompactIndex();
+            zone.connectivity = reader.U64();
+            zone.visibility = reader.U64();
+            result.zones.push_back(zone);
         }
         reader.CompactIndex();  // Polys object reference
+
+        const std::int32_t light_map_count = ArrayCount(reader, "light-map index array");
+        result.light_maps.reserve(static_cast<std::size_t>(light_map_count));
+        for (std::int32_t index = 0; index < light_map_count; ++index) {
+            LightMapIndex light_map;
+            light_map.data_offset = reader.I32();
+            light_map.pan = ReadVec3(reader);
+            light_map.u_clamp = reader.CompactIndex();
+            light_map.v_clamp = reader.CompactIndex();
+            light_map.u_scale = reader.F32();
+            light_map.v_scale = reader.F32();
+            light_map.light_actors = reader.I32();
+            if (light_map.data_offset < 0 || light_map.u_clamp <= 0 || light_map.v_clamp <= 0
+                || light_map.u_clamp > 4096 || light_map.v_clamp > 4096
+                || light_map.u_scale == 0.0f || light_map.v_scale == 0.0f) {
+                throw std::runtime_error("light-map index contains unreasonable dimensions or scale");
+            }
+            result.light_maps.push_back(light_map);
+        }
+
+        const std::int32_t light_bit_count = ArrayCount(reader, "light-bit array");
+        if (static_cast<std::size_t>(light_bit_count) > kMaxLightBitBytes
+            || static_cast<std::size_t>(light_bit_count) > reader.Remaining()) {
+            throw std::runtime_error("light-bit array exceeds the model payload limit");
+        }
+        result.light_bits.reserve(static_cast<std::size_t>(light_bit_count));
+        for (std::int32_t index = 0; index < light_bit_count; ++index) {
+            result.light_bits.push_back(reader.U8());
+        }
+
+        const std::int32_t model_bound_count = ArrayCount(reader, "model bound array");
+        if (static_cast<std::size_t>(model_bound_count) > reader.Remaining() / 25u) {
+            throw std::runtime_error("model bound array exceeds the model payload");
+        }
+        for (std::int32_t index = 0; index < model_bound_count; ++index) {
+            ReadVec3(reader);
+            ReadVec3(reader);
+            reader.U8();
+        }
+
+        const std::int32_t leaf_hull_count = ArrayCount(reader, "leaf hull array");
+        if (static_cast<std::size_t>(leaf_hull_count) > reader.Remaining() / 4u) {
+            throw std::runtime_error("leaf hull array exceeds the model payload");
+        }
+        for (std::int32_t index = 0; index < leaf_hull_count; ++index) {
+            reader.I32();
+        }
+
+        const std::int32_t leaf_count = ArrayCount(reader, "convex leaf array");
+        for (std::int32_t index = 0; index < leaf_count; ++index) {
+            reader.CompactIndex();
+            reader.CompactIndex();
+            reader.CompactIndex();
+            reader.U64();
+        }
+
+        const std::int32_t light_actor_count = ArrayCount(reader, "model light actor array");
+        result.light_actor_references.reserve(static_cast<std::size_t>(light_actor_count));
+        for (std::int32_t index = 0; index < light_actor_count; ++index) {
+            result.light_actor_references.push_back(reader.CompactIndex());
+        }
 
         result.payload_bytes_consumed = reader.Tell();
         Triangulate(result);
@@ -442,6 +507,10 @@ ModelGeometry LoadModelGeometry(const PackageIndex& package, std::size_t export_
         result.nodes.clear();
         result.surfaces.clear();
         result.vertices.clear();
+        result.zones.clear();
+        result.light_maps.clear();
+        result.light_bits.clear();
+        result.light_actor_references.clear();
         result.triangles.clear();
     }
     return result;

@@ -10,15 +10,14 @@ data, validates files installed by the owner, and keeps the original files
 outside Git. It deliberately omits StS2's Godot, .NET, Steam, Harmony, cloud
 and gameplay-touch layers.
 
-## Current gate: G3 in progress
+## Current gate: G4 in progress
 
-G0, G1 and G2 are complete. The native shell and the real `Duel10.unr` BSP
-frame were confirmed on a Samsung Galaxy A57, and the owner's original disc
-yielded 107/107 structurally valid Unreal packages. G3 now resolves BSP
-surface materials, calculates UE1 texture coordinates and decodes palettized
-texture mipmaps without including any original asset in Git or the APK. The
-private probe selected `WizardDuel.DumbleWood_WD` (128×128, `Palette42`) for
-514 real `Duel10` triangles.
+G0 through G3 are complete. On 2026-08-11 the Galaxy A57 visibly confirmed the
+first original `Duel10` texture on the real BSP, closing G3. G4a expands that
+path to every decodable BSP material and reads UE1 `FLightMapIndex`/
+`LightBits` data into a bounded visibility-lightmap atlas. The device test is
+the remaining acceptance step; no original asset is included in Git or the
+APK.
 
 The current foundation provides:
 
@@ -35,8 +34,10 @@ The current foundation provides:
 - a UE1/UE2 package-index reader for compact names, imports and exports;
 - a clean-room `hp2_map_probe` that decodes `Duel10.unr` while emitting only
   metadata and aggregate geometry counts;
-- a bounded UE1 P8 texture/palette reader and BSP UV calculation covered by
+- bounded UE1 P8 texture/palette and BSP light-mask readers covered by
   synthetic tests;
+- material-batched GLES rendering with a second UV set for UE1 static shadow
+  masks;
 - GitHub Actions builds, so Google Colab is not part of the workflow.
 
 The runtime diagnostic screen uses four bars, from left to right:
@@ -88,15 +89,22 @@ The G3a metadata-only probe resolved the dominant visible BSP material to
 found 514 triangles using that material. Only these names, dimensions and
 counts leave the private runner; its 65,536 decoded RGBA bytes do not.
 
+G4a parses each `FLightMapIndex`, the packed `LightBits` shadow masks and the
+null-terminated per-surface light list. The private workflow reports only
+aggregate counts and atlas dimensions; decoded textures, mask pixels and the
+atlas remain inside the ephemeral process and are deleted with the original
+data.
+
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
 - [G2 format notes](docs/G2_FORMAT_NOTES.md)
 - [G3 format notes](docs/G3_FORMAT_NOTES.md)
+- [G4 format notes](docs/G4_FORMAT_NOTES.md)
 
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G3a-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G4a-dev-debug` from the workflow run's
 **Artifacts** section.
 
 Development APKs from G3a onward use the checked-in, non-production development
@@ -147,8 +155,8 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G0 | Native Android shell, gamepad path and package-summary probe | PASS |
 | G1 | Exact HP2 package/version catalog from the owner's original media | PASS — 107/107 packages |
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
-| G3 | UVs and real textures | DEVICE TEST — original 128×128 texture on 514 triangles |
-| G4 | Lightmaps and recognizable room | Pending |
+| G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
+| G4 | Lightmaps and recognizable room | DEVICE TEST — G4a implementation ready for private validation |
 | G5 | Actors, meshes and animation | Pending |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |

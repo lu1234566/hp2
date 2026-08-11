@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(hp2_portcore STATIC
     src/portcore/runtime.cpp
+    src/portcore/ue_lightmap.cpp
     src/portcore/ue_model.cpp
     src/portcore/ue_package.cpp
     src/portcore/ue_texture.cpp

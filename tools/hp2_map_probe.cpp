@@ -1,4 +1,5 @@
 #include "hp2/ue_model.h"
+#include "hp2/ue_lightmap.h"
 #include "hp2/ue_package.h"
 #include "hp2/ue_texture.h"
 
@@ -72,15 +73,19 @@ int main(int argc, char** argv) {
     }
 
     hp2::DecodedTexture texture;
+    hp2::DecodedTextureSet textures;
+    hp2::LightMapAtlas light_maps;
     const bool texture_probe_requested = argc == 3;
     if (texture_probe_requested && model.valid) {
         texture = hp2::LoadFirstSurfaceTexture(argv[2], package, model);
+        textures = hp2::LoadSurfaceTextures(argv[2], package, model);
+        light_maps = hp2::BuildVisibilityLightMapAtlas(model);
     } else if (texture_probe_requested) {
         texture.error = "model geometry is invalid";
     }
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v2\",\n"
+              << "  \"schema\": \"hp2-map-index-v3\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -131,6 +136,30 @@ int main(int argc, char** argv) {
         std::cout << "\n";
     }
     std::cout << "  },\n"
+              << "  \"g4_scene\": {\n"
+              << "    \"requested\": " << (texture_probe_requested ? "true" : "false") << ",\n"
+              << "    \"texture_set_valid\": " << (textures.valid ? "true" : "false") << ",\n"
+              << "    \"material_candidates\": " << textures.material_candidates << ",\n"
+              << "    \"decoded_textures\": " << textures.textures.size() << ",\n"
+              << "    \"failed_materials\": " << textures.failed_materials << ",\n"
+              << "    \"textured_triangles\": " << textures.textured_triangles << ",\n"
+              << "    \"texture_rgba_bytes\": " << textures.rgba_bytes << ",\n"
+              << "    \"lightmap_valid\": " << (light_maps.valid ? "true" : "false") << ",\n"
+              << "    \"model_lightmaps\": " << model.light_maps.size() << ",\n"
+              << "    \"light_bits_bytes\": " << model.light_bits.size() << ",\n"
+              << "    \"referenced_lightmaps\": " << light_maps.referenced_light_maps << ",\n"
+              << "    \"shadow_masks\": " << light_maps.shadow_mask_count << ",\n"
+              << "    \"lit_surfaces\": " << light_maps.lit_surfaces << ",\n"
+              << "    \"lit_triangles\": " << light_maps.lit_triangles << ",\n"
+              << "    \"atlas_width\": " << light_maps.width << ",\n"
+              << "    \"atlas_height\": " << light_maps.height;
+    if (!textures.error.empty() || !light_maps.error.empty()) {
+        std::cout << ",\n    \"texture_error\": \"" << JsonEscape(textures.error)
+                  << "\",\n    \"lightmap_error\": \"" << JsonEscape(light_maps.error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "  },\n"
               << "  \"imports\": [\n";
 
     for (std::size_t index = 0; index < package.imports.size(); ++index) {
@@ -166,5 +195,8 @@ int main(int argc, char** argv) {
     if (!model.valid) {
         return 4;
     }
-    return texture_probe_requested && !texture.valid ? 5 : 0;
+    if (texture_probe_requested && (!texture.valid || !textures.valid)) {
+        return 5;
+    }
+    return texture_probe_requested && !light_maps.valid ? 6 : 0;
 }
