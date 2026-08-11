@@ -56,7 +56,7 @@ jobs:
           grep -Fq '"${PORTCORE_ROOT}/ue_model.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq '"${PORTCORE_ROOT}/ue_texture.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq 'LoadFirstSurfaceTexture' android/app/src/main/cpp/platform/android_main.cpp
-          apksigner verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signing.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signing.txt"
           grep -Fiq 'e853843728a61a4ffb5b6fa1141af5a74d9114039eac6daec53fde64b58d1e2d' "$RUNNER_TEMP/apk-signing.txt"
       - uses: actions/upload-artifact@v7
         with:
