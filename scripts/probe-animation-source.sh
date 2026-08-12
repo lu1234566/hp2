@@ -6,6 +6,13 @@ if [[ -z "${HP2_DRIVE_URL:-}" ]]; then
     exit 64
 fi
 
+for command_name in gdown iat bsdtar 7z unshield g++; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "Required command is missing: $command_name" >&2
+        exit 69
+    fi
+done
+
 report_root="${1:-.local/hp2-animation-report}"
 mkdir -p "$report_root"
 report_root="$(cd "$report_root" && pwd)"
@@ -18,7 +25,7 @@ iso_path="$probe_root/HPCOS.iso"
 mkdir -p "$disc_root" "$installer_root"
 
 cleanup() {
-    if [[ -d "${probe_root:-}" ]]; then
+    if [[ -n "${probe_root:-}" && -d "$probe_root" ]]; then
         find "$probe_root" -depth -mindepth 1 -delete || true
         rmdir "$probe_root" || true
     fi
@@ -28,14 +35,30 @@ trap cleanup EXIT
 echo "Downloading the owner's original HP2 media..."
 gdown --fuzzy "$HP2_DRIVE_URL" --output "$mdf_path"
 
-echo "Converting and extracting media..."
+echo "Converting MDF to ISO..."
 iat "$mdf_path" "$iso_path" >"$report_root/iat.log" 2>&1
-if bsdtar -tf "$mdf_path" >/dev/null 2>"$report_root/extract.log"; then
+
+echo "Extracting the optical-disc filesystem with the proven fallback chain..."
+extracted=false
+if bsdtar -tf "$mdf_path" >"$report_root/mdf-files.txt" 2>"$report_root/extract.log" \
+    && [[ -s "$report_root/mdf-files.txt" ]]; then
     bsdtar -xf "$mdf_path" -C "$disc_root" >>"$report_root/extract.log" 2>&1
-elif bsdtar -tf "$iso_path" >/dev/null 2>>"$report_root/extract.log"; then
+    extracted=true
+elif bsdtar -tf "$iso_path" >"$report_root/iso-files.txt" 2>>"$report_root/extract.log" \
+    && [[ -s "$report_root/iso-files.txt" ]]; then
     bsdtar -xf "$iso_path" -C "$disc_root" >>"$report_root/extract.log" 2>&1
-else
-    7z x -y "$iso_path" "-o$disc_root" >>"$report_root/extract.log" 2>&1
+    extracted=true
+fi
+
+if [[ "$extracted" != true ]]; then
+    7z x -y "$mdf_path" "-o$disc_root" >"$report_root/7z.log" 2>&1 || true
+fi
+if ! find "$disc_root" -type f -print -quit | grep -q .; then
+    7z x -y "$iso_path" "-o$disc_root" >>"$report_root/7z.log" 2>&1 || true
+fi
+if ! find "$disc_root" -type f -print -quit | grep -q .; then
+    echo "No files could be extracted from either MDF or converted ISO." >&2
+    exit 65
 fi
 
 cab_count=0
@@ -43,11 +66,16 @@ while IFS= read -r -d '' cab_path; do
     cab_count=$((cab_count + 1))
     target="$installer_root/cab-$cab_count"
     mkdir -p "$target"
+    {
+        echo "### $cab_path"
+        unshield l "$cab_path" || true
+    } >>"$report_root/unshield.log" 2>&1
     unshield -d "$target" x "$cab_path" >>"$report_root/unshield.log" 2>&1 || true
 done < <(find "$disc_root" -type f -iname 'data1.cab' -print0)
 
-if ! find "$installer_root" -type f -iname 'HPModels.u' -print -quit | grep -q .; then
-    echo "HPModels.u was not found after extraction." >&2
+hpmodels_path="$(find "$probe_root" -type f -iname 'HPModels.u' -print -quit)"
+if [[ -z "$hpmodels_path" ]]; then
+    echo "HPModels.u was not found after the proven extraction path." >&2
     exit 65
 fi
 
@@ -71,13 +99,14 @@ g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc/portcore/include \
 "$build_dir/hp2_animation_probe" "$probe_root" HPModels skGenMaleAnims \
     >"$report_root/animation-skGenMaleAnims.json"
 
-python3 - "$report_root/animation-skGenMaleAnims.json" "$report_root/summary.json" <<'PY'
+python3 - "$report_root/animation-skGenMaleAnims.json" "$report_root/summary.json" "$cab_count" <<'PY'
 import json
 import pathlib
 import sys
 source = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v1",
+    "schema": "hp2-animation-source-summary-v2",
+    "installshield_cab_sets": int(sys.argv[3]),
     "package": source.get("package"),
     "object": source.get("object"),
     "class": source.get("class"),
