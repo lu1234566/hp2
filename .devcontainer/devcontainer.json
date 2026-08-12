@@ -1,0 +1,19 @@
+{
+  "name": "HP2 Mobile Android",
+  "image": "ghcr.io/cirruslabs/android-sdk:36",
+  "remoteUser": "root",
+  "containerEnv": {
+    "GRADLE_USER_HOME": "/workspaces/.gradle-cache"
+  },
+  "postCreateCommand": "bash scripts/setup-codespace.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "fwcd.kotlin",
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools"
+      ]
+    }
+  }
+}
