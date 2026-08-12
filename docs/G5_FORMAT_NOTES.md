@@ -131,6 +131,46 @@ fixture covers both a valid inherited scale and the rejected `200.0` regression.
 The automatic room/object cycle remains enabled so the correction can be
 verified without a controller.
 
-G5 is not complete at G5c2: inherited object placement needs its corrected
-device capture, while skeletal animation, collision and scripted behavior
-remain separate acceptance steps.
+The corrected Galaxy A57 capture on 2026-08-12 shows the object-only diagnostic
+without giant inherited characters and then the complete textured/lightmapped
+room with furniture and actors at plausible relative scale. That closes G5c2
+as a visual **PASS**. The view is still intentionally a normalized diagnostic,
+not the final gameplay camera.
+
+## G5d skeletal stream mapping
+
+G5d begins with the `SkeletalMesh` data that G5a deliberately skipped. The
+existing reader already reaches the animation-sequence table, reference points,
+`RefSkeleton`, `BoneWeightIndices`, `BoneWeights` and `LocalPoints`, but until
+now it only counted or skipped those records. Assigning gameplay semantics to
+the two 32-bit fields in each weight-index record without evidence would risk a
+plausible-looking but incorrect skinning implementation.
+
+A separate bounded clean-room decoder therefore replays the already validated
+`Mesh`/`LodMesh` prefix and records the following in memory:
+
+- animation sequence name/group, start frame, frame count, notify count and rate;
+- reference points;
+- reference-bone names, flags, orientation, position, length, size, child count
+  and parent index;
+- the two raw 32-bit words of each `BoneWeightIndices` record;
+- each raw 32-bit `BoneWeights` word plus a diagnostic float interpretation;
+- `LocalPoints` and the number of bytes left after the known skeletal tail.
+
+The public/private report boundary remains metadata-only. The probe may emit
+sequence labels, counts, parent-validity counts, raw-field maxima, float-range
+statistics and remaining-byte counts. It does not emit point coordinates, bone
+transforms, individual index records or individual weights. A synthetic
+version-79 fixture validates complete consumption of a controlled skeletal
+stream before the original HP2 mesh is inspected.
+
+The first real G5d acceptance step is to reproduce the already established 291
+reference points and 135 bones for `HPModels.skhp2_genmale1Mesh`, consume its
+known skeletal stream coherently and use the aggregate weight statistics to
+identify the serialized influence layout. CPU/GLES skinning and the first
+moving character follow only after that layout is demonstrated rather than
+guessed.
+
+G5 remains open until a real character is skinned and animated. Camera,
+collision and scripted gameplay remain G6 work and are intentionally not mixed
+into this checkpoint.
