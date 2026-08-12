@@ -100,6 +100,8 @@ g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_layout_probe
     -o "$build_dir/hp2_animation_layout_probe" >>"$report_root/build.log" 2>&1
 g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_lazy_probe.cpp \
     -o "$build_dir/hp2_animation_lazy_probe" >>"$report_root/build.log" 2>&1
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_packed_probe.cpp \
+    -o "$build_dir/hp2_animation_packed_probe" >>"$report_root/build.log" 2>&1
 
 "$build_dir/hp2_animation_probe" "$probe_root" HPModels skGenMaleAnims \
     >"$report_root/animation-skGenMaleAnims.json"
@@ -107,10 +109,13 @@ g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_lazy_probe.c
     >"$report_root/animation-layout-candidates.json"
 "$build_dir/hp2_animation_lazy_probe" "$probe_root" HPModels skGenMaleAnims \
     >"$report_root/animation-lazy-candidates.json"
+"$build_dir/hp2_animation_packed_probe" "$probe_root" HPModels skGenMaleAnims \
+    >"$report_root/animation-packed-candidates.json"
 
 python3 - "$report_root/animation-skGenMaleAnims.json" \
     "$report_root/animation-layout-candidates.json" \
     "$report_root/animation-lazy-candidates.json" \
+    "$report_root/animation-packed-candidates.json" \
     "$report_root/summary.json" "$cab_count" <<'PY'
 import json
 import pathlib
@@ -118,9 +123,10 @@ import sys
 animation = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 layouts = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 lazy = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8"))
+packed = json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v4",
-    "installshield_cab_sets": int(sys.argv[5]),
+    "schema": "hp2-animation-source-summary-v5",
+    "installshield_cab_sets": int(sys.argv[6]),
     "package": animation.get("package"),
     "object": animation.get("object"),
     "class": animation.get("class"),
@@ -135,8 +141,9 @@ summary = {
     "baseline_motion_error_stage": animation.get("motion_error_stage"),
     "plain_layout_candidates": layouts.get("layouts", []),
     "lazy_layout_candidates": lazy.get("layouts", []),
+    "packed_layout_candidates": packed.get("top_candidates", []),
 }
-pathlib.Path(sys.argv[4]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+pathlib.Path(sys.argv[5]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
 
 echo "Animation metadata probe complete. Original media remains only in the temporary runner directory."
