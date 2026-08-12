@@ -49,7 +49,6 @@ elif bsdtar -tf "$iso_path" >"$report_root/iso-files.txt" 2>>"$report_root/extra
     bsdtar -xf "$iso_path" -C "$disc_root" >>"$report_root/extract.log" 2>&1
     extracted=true
 fi
-
 if [[ "$extracted" != true ]]; then
     7z x -y "$mdf_path" "-o$disc_root" >"$report_root/7z.log" 2>&1 || true
 fi
@@ -73,9 +72,8 @@ while IFS= read -r -d '' cab_path; do
     unshield -d "$target" x "$cab_path" >>"$report_root/unshield.log" 2>&1 || true
 done < <(find "$disc_root" -type f -iname 'data1.cab' -print0)
 
-hpmodels_path="$(find "$probe_root" -type f -iname 'HPModels.u' -print -quit)"
-if [[ -z "$hpmodels_path" ]]; then
-    echo "HPModels.u was not found after the proven extraction path." >&2
+if ! find "$probe_root" -type f -iname 'HPModels.u' -print -quit | grep -q .; then
+    echo "HPModels.u was not found after extraction." >&2
     exit 65
 fi
 
@@ -98,6 +96,8 @@ g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_probe.cpp \
     -o "$build_dir/hp2_animation_probe" >"$report_root/build.log" 2>&1
 g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_motion_probe.cpp \
     -o "$build_dir/hp2_animation_motion_probe" >>"$report_root/build.log" 2>&1
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_packed2_probe.cpp \
+    -o "$build_dir/hp2_animation_packed2_probe" >>"$report_root/build.log" 2>&1
 
 "$build_dir/hp2_animation_probe" "$probe_root" HPModels skGenMaleAnims \
     >"$report_root/animation-skGenMaleAnims.json"
@@ -106,19 +106,23 @@ set +e
     >"$report_root/animation-motion.json"
 motion_status=$?
 set -e
+"$build_dir/hp2_animation_packed2_probe" "$probe_root" HPModels skGenMaleAnims \
+    >"$report_root/animation-packed-after-boneindices.json"
 
 python3 - "$report_root/animation-skGenMaleAnims.json" \
-    "$report_root/animation-motion.json" "$report_root/summary.json" \
-    "$cab_count" "$motion_status" <<'PY'
+    "$report_root/animation-motion.json" \
+    "$report_root/animation-packed-after-boneindices.json" \
+    "$report_root/summary.json" "$cab_count" "$motion_status" <<'PY'
 import json
 import pathlib
 import sys
 animation = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 motion = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+packed = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v6",
-    "installshield_cab_sets": int(sys.argv[4]),
-    "motion_probe_exit_code": int(sys.argv[5]),
+    "schema": "hp2-animation-source-summary-v7",
+    "installshield_cab_sets": int(sys.argv[5]),
+    "motion_probe_exit_code": int(sys.argv[6]),
     "package": animation.get("package"),
     "object": animation.get("object"),
     "class": animation.get("class"),
@@ -129,8 +133,9 @@ summary = {
     "mesh_name_matches": animation.get("mesh_name_matches"),
     "mesh_parent_matches": animation.get("mesh_parent_matches"),
     "motion": motion,
+    "packed_after_boneindices": packed.get("top", []),
 }
-pathlib.Path(sys.argv[3]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+pathlib.Path(sys.argv[4]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
 
 echo "Animation metadata probe complete. Original media remains only in the temporary runner directory."
