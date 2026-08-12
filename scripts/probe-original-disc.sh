@@ -104,13 +104,23 @@ else
         >"$report_root/g2-duel10-index.error.txt"
 fi
 
+g5d_probe_status=0
+./.local/build/host/hp2_skeletal_probe \
+    "$probe_root" HPModels skhp2_genmale1Mesh \
+    >"$report_root/g5d-skeletal.json" || g5d_probe_status=$?
+if [[ "$g5d_probe_status" -ne 0 ]]; then
+    echo "G5d skeletal probe exited with status $g5d_probe_status." \
+        >"$report_root/g5d-skeletal.error.txt"
+fi
+
 find "$disc_root" "$installer_root" -type f -printf '%s\t%p\n' \
     | sed "s#${probe_root}/##" \
     | LC_ALL=C sort >"$report_root/extracted-files.tsv"
 
 python3 - "$report_root/probe.json" "$report_root/summary.json" \
-    "$report_root/g2-duel10-index.json" "$mdf_bytes" "$mdf_sha256" \
-    "$cab_count" "$probe_status" "$g2_probe_status" <<'PY'
+    "$report_root/g2-duel10-index.json" "$report_root/g5d-skeletal.json" \
+    "$mdf_bytes" "$mdf_sha256" "$cab_count" "$probe_status" \
+    "$g2_probe_status" "$g5d_probe_status" <<'PY'
 import json
 import pathlib
 import sys
@@ -118,22 +128,24 @@ import sys
 probe_path = pathlib.Path(sys.argv[1])
 summary_path = pathlib.Path(sys.argv[2])
 g2_path = pathlib.Path(sys.argv[3])
+g5d_path = pathlib.Path(sys.argv[4])
 probe = json.loads(probe_path.read_text(encoding="utf-8"))
 g2 = json.loads(g2_path.read_text(encoding="utf-8")) if g2_path.is_file() else {}
+g5d = json.loads(g5d_path.read_text(encoding="utf-8")) if g5d_path.is_file() else {}
 model = g2.get("model_geometry", {})
 texture = g2.get("g3_texture", {})
 scene = g2.get("g4_scene", {})
 actors = g2.get("g5_actor_census", {})
 mesh_scene = g2.get("g5_mesh_scene", g2.get("g5_direct_mesh_scene", {}))
 summary = {
-    "schema": "hp2-original-disc-probe-v11",
-    "mdf_bytes": int(sys.argv[4]),
-    "mdf_sha256": sys.argv[5],
-    "installshield_cab_sets": int(sys.argv[6]),
-    "probe_exit_code": int(sys.argv[7]),
+    "schema": "hp2-original-disc-probe-v12",
+    "mdf_bytes": int(sys.argv[5]),
+    "mdf_sha256": sys.argv[6],
+    "installshield_cab_sets": int(sys.argv[7]),
+    "probe_exit_code": int(sys.argv[8]),
     "package_candidates": probe.get("candidate_count", 0),
     "valid_packages": probe.get("valid_count", 0),
-    "g2_map_probe_exit_code": int(sys.argv[8]),
+    "g2_map_probe_exit_code": int(sys.argv[9]),
     "g2_map": "Duel10.unr" if g2 else None,
     "g2_names": g2.get("name_count", 0),
     "g2_imports": g2.get("import_count", 0),
@@ -216,6 +228,31 @@ summary = {
     "g5_mesh_assets": mesh_scene.get("assets", []),
     "g5_mesh_instances": mesh_scene.get("instances", []),
     "g5_mesh_error": mesh_scene.get("error"),
+    "g5d_skeletal_probe_exit_code": int(sys.argv[10]),
+    "g5d_skeletal_valid": g5d.get("valid", False),
+    "g5d_skeletal_package": g5d.get("package_name"),
+    "g5d_skeletal_object": g5d.get("object_name"),
+    "g5d_skeletal_version": g5d.get("version", 0),
+    "g5d_frame_vertices": g5d.get("frame_vertices", 0),
+    "g5d_animation_frames": g5d.get("animation_frames", 0),
+    "g5d_sequence_count": g5d.get("sequence_count", 0),
+    "g5d_reference_points": g5d.get("reference_points", 0),
+    "g5d_bones": g5d.get("bones", 0),
+    "g5d_root_like_bones": g5d.get("root_like_bones", 0),
+    "g5d_invalid_parent_bones": g5d.get("invalid_parent_bones", 0),
+    "g5d_weight_index_records": g5d.get("weight_index_records", 0),
+    "g5d_weight_index_first_max": g5d.get("weight_index_first_max", 0),
+    "g5d_weight_index_second_max": g5d.get("weight_index_second_max", 0),
+    "g5d_weight_words": g5d.get("weight_words", 0),
+    "g5d_finite_weight_words": g5d.get("finite_weight_words", 0),
+    "g5d_unit_interval_weight_words": g5d.get("unit_interval_weight_words", 0),
+    "g5d_nonfinite_weight_words": g5d.get("nonfinite_weight_words", 0),
+    "g5d_finite_weight_min": g5d.get("finite_weight_min"),
+    "g5d_finite_weight_max": g5d.get("finite_weight_max"),
+    "g5d_local_points": g5d.get("local_points", 0),
+    "g5d_remaining_bytes": g5d.get("remaining_bytes", 0),
+    "g5d_sequences": g5d.get("sequences", []),
+    "g5d_error": g5d.get("error"),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
