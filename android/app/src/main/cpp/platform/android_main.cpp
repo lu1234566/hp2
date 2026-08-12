@@ -1,12 +1,10 @@
-#include <game-activity/GameActivity.cpp>
-#include <game-text-input/gametextinput.cpp>
+#include <game-activity/native_app_glue/android_native_app_glue.h>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
-#include <memory>
-#include <thread>
 #include <chrono>
+#include <string>
 
 #define LOG_TAG "HP2Engine"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -19,19 +17,21 @@ extern void HP2_Render();
 extern void HP2_Resize(int width, int height);
 
 struct EngineState {
-    ANativeWindow* window = nullptr;
+    android_app* app = nullptr;
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLSurface surface = EGL_NO_SURFACE;
     EGLContext context = EGL_NO_CONTEXT;
     int width = 0;
     int height = 0;
-    bool running = false;
-    std::thread gameThread;
+    bool hasWindow = false;
+    bool engineInitialized = false;
 };
 
-static std::unique_ptr<EngineState> g_state;
-
 static bool InitializeEGL(EngineState* state) {
+    if (!state || !state->app || !state->app->window) {
+        return false;
+    }
+
     const EGLint attribs[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
         EGL_BLUE_SIZE, 8,
@@ -43,130 +43,177 @@ static bool InitializeEGL(EngineState* state) {
     };
 
     state->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    eglInitialize(state->display, nullptr, nullptr);
+    if (state->display == EGL_NO_DISPLAY || !eglInitialize(state->display, nullptr, nullptr)) {
+        LOGE("Unable to initialize EGL display");
+        return false;
+    }
 
-    EGLConfig config;
-    EGLint numConfigs;
-    eglChooseConfig(state->display, attribs, &config, 1, &numConfigs);
+    EGLConfig config = nullptr;
+    EGLint numConfigs = 0;
+    if (!eglChooseConfig(state->display, attribs, &config, 1, &numConfigs) || numConfigs < 1) {
+        LOGE("Unable to choose EGL config");
+        return false;
+    }
 
-    EGLint format;
+    EGLint format = 0;
     eglGetConfigAttrib(state->display, config, EGL_NATIVE_VISUAL_ID, &format);
-    ANativeWindow_setBuffersGeometry(state->window, 0, 0, format);
+    ANativeWindow_setBuffersGeometry(state->app->window, 0, 0, format);
 
-    state->surface = eglCreateWindowSurface(state->display, config, state->window, nullptr);
-
-    const EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    state->surface = eglCreateWindowSurface(state->display, config, state->app->window, nullptr);
+    const EGLint contextAttribs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
     state->context = eglCreateContext(state->display, config, EGL_NO_CONTEXT, contextAttribs);
 
-    if (eglMakeCurrent(state->display, state->surface, state->surface, state->context) == EGL_FALSE) {
-        LOGE("Unable to eglMakeCurrent");
+    if (state->surface == EGL_NO_SURFACE || state->context == EGL_NO_CONTEXT ||
+        eglMakeCurrent(state->display, state->surface, state->surface, state->context) == EGL_FALSE) {
+        LOGE("Unable to create/make current EGL context");
         return false;
     }
 
     eglQuerySurface(state->display, state->surface, EGL_WIDTH, &state->width);
     eglQuerySurface(state->display, state->surface, EGL_HEIGHT, &state->height);
+    state->hasWindow = true;
 
     LOGI("EGL initialized: %dx%d", state->width, state->height);
     return true;
 }
 
 static void ShutdownEGL(EngineState* state) {
+    if (!state) return;
+
     if (state->display != EGL_NO_DISPLAY) {
         eglMakeCurrent(state->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        if (state->context != EGL_NO_CONTEXT) eglDestroyContext(state->display, state->context);
-        if (state->surface != EGL_NO_SURFACE) eglDestroySurface(state->display, state->surface);
+        if (state->context != EGL_NO_CONTEXT) {
+            eglDestroyContext(state->display, state->context);
+        }
+        if (state->surface != EGL_NO_SURFACE) {
+            eglDestroySurface(state->display, state->surface);
+        }
         eglTerminate(state->display);
     }
+
     state->display = EGL_NO_DISPLAY;
-    state->context = EGL_NO_CONTEXT;
     state->surface = EGL_NO_SURFACE;
+    state->context = EGL_NO_CONTEXT;
+    state->hasWindow = false;
+    state->width = 0;
+    state->height = 0;
 }
 
-static void GameLoop(EngineState* state) {
-    const char* assetPath = "/sdcard/Android/data/com.hp2.mobile/files/hp2_assets";
-    if (!HP2_Initialize(assetPath)) {
-        LOGE("Failed to initialize HP2 engine");
-        return;
+static std::string AssetPathFor(const android_app* app) {
+    if (app && app->activity && app->activity->externalDataPath) {
+        return std::string(app->activity->externalDataPath) + "/hp2_assets";
     }
+    if (app && app->activity && app->activity->internalDataPath) {
+        return std::string(app->activity->internalDataPath) + "/hp2_assets";
+    }
+    return "hp2_assets";
+}
 
-    HP2_Resize(state->width, state->height);
+static void HandleAppCommand(android_app* app, int32_t command) {
+    auto* state = static_cast<EngineState*>(app->userData);
+    if (!state) return;
+
+    switch (command) {
+        case APP_CMD_INIT_WINDOW: {
+            if (!app->window || state->hasWindow) break;
+
+            if (!InitializeEGL(state)) {
+                LOGE("EGL initialization failed");
+                break;
+            }
+
+            if (!state->engineInitialized) {
+                const std::string assetPath = AssetPathFor(app);
+                state->engineInitialized = HP2_Initialize(assetPath.c_str());
+                if (!state->engineInitialized) {
+                    LOGE("Failed to initialize HP2 engine");
+                    ShutdownEGL(state);
+                    break;
+                }
+            }
+
+            HP2_Resize(state->width, state->height);
+            break;
+        }
+
+        case APP_CMD_WINDOW_RESIZED:
+        case APP_CMD_CONTENT_RECT_CHANGED: {
+            if (state->hasWindow && state->display != EGL_NO_DISPLAY) {
+                eglQuerySurface(state->display, state->surface, EGL_WIDTH, &state->width);
+                eglQuerySurface(state->display, state->surface, EGL_HEIGHT, &state->height);
+                HP2_Resize(state->width, state->height);
+            }
+            break;
+        }
+
+        case APP_CMD_TERM_WINDOW:
+            ShutdownEGL(state);
+            break;
+
+        default:
+            break;
+    }
+}
+
+extern "C" void android_main(struct android_app* app) {
+    LOGI("android_main started");
+
+    EngineState state;
+    state.app = app;
+    app->userData = &state;
+    app->onAppCmd = HandleAppCommand;
+
     auto lastTime = std::chrono::steady_clock::now();
 
-    while (state->running) {
-        auto now = std::chrono::steady_clock::now();
-        float deltaTime = std::chrono::duration<float>(now - lastTime).count();
+    while (!app->destroyRequested) {
+        int events = 0;
+        android_poll_source* source = nullptr;
+
+        while (ALooper_pollOnce(state.hasWindow ? 0 : -1, nullptr, &events,
+                                reinterpret_cast<void**>(&source)) >= 0) {
+            if (source) {
+                source->process(app, source);
+            }
+            if (app->destroyRequested) {
+                break;
+            }
+        }
+
+        if (!state.hasWindow || !state.engineInitialized) {
+            lastTime = std::chrono::steady_clock::now();
+            continue;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        const float deltaTime = std::chrono::duration<float>(now - lastTime).count();
         lastTime = now;
 
         HP2_Tick(deltaTime);
         HP2_Render();
-        eglSwapBuffers(state->display, state->surface);
+        eglSwapBuffers(state.display, state.surface);
     }
 
-    HP2_Shutdown();
-}
-
-extern "C" {
-
-void GameActivity_onCreate(GameActivity* activity, void* savedState, size_t savedStateSize) {
-    LOGI("GameActivity_onCreate");
-    g_state = std::make_unique<EngineState>();
-    GameActivity_onCreate_C(activity, savedState, savedStateSize);
-}
-
-void GameActivity_onDestroy(GameActivity* activity) {
-    LOGI("GameActivity_onDestroy");
-    if (g_state) {
-        g_state->running = false;
-        if (g_state->gameThread.joinable()) g_state->gameThread.join();
-        ShutdownEGL(g_state.get());
-        g_state.reset();
+    if (state.engineInitialized) {
+        HP2_Shutdown();
     }
-    GameActivity_onDestroy_C(activity);
+    ShutdownEGL(&state);
+    LOGI("android_main stopped");
 }
 
-void GameActivity_onStart(GameActivity* activity) { GameActivity_onStart_C(activity); }
-void GameActivity_onResume(GameActivity* activity) { GameActivity_onResume_C(activity); }
-void GameActivity_onPause(GameActivity* activity) { GameActivity_onPause_C(activity); }
-void GameActivity_onStop(GameActivity* activity) { GameActivity_onStop_C(activity); }
-void GameActivity_onWindowFocusChanged(GameActivity* activity, int focused) {
-    GameActivity_onWindowFocusChanged_C(activity, focused);
-}
-
-void GameActivity_onNativeWindowCreated(GameActivity* activity, ANativeWindow* window) {
-    LOGI("Native window created");
-    g_state->window = window;
-    if (InitializeEGL(g_state.get())) {
-        g_state->running = true;
-        g_state->gameThread = std::thread(GameLoop, g_state.get());
-    }
-}
-
-void GameActivity_onNativeWindowDestroyed(GameActivity* activity, ANativeWindow* window) {
-    LOGI("Native window destroyed");
-    g_state->running = false;
-    if (g_state->gameThread.joinable()) g_state->gameThread.join();
-    ShutdownEGL(g_state.get());
-    g_state->window = nullptr;
-}
-
-void GameActivity_onNativeWindowResized(GameActivity* activity, ANativeWindow* window) {
-    if (g_state && g_state->display != EGL_NO_DISPLAY) {
-        eglQuerySurface(g_state->display, g_state->surface, EGL_WIDTH, &g_state->width);
-        eglQuerySurface(g_state->display, g_state->surface, EGL_HEIGHT, &g_state->height);
-        HP2_Resize(g_state->width, g_state->height);
-    }
-}
-
-} // extern "C"
-
-// Engine stubs - replace with real engine source
+// Engine scaffolding. These are intentionally small until the real HP2 engine
+// modules are connected to the Android platform layer.
 bool HP2_Initialize(const char* assetPath) {
-    LOGI("HP2_Initialize stub: %s", assetPath);
+    LOGI("HP2_Initialize scaffold: %s", assetPath ? assetPath : "(null)");
     return true;
 }
 
-void HP2_Shutdown() { LOGI("HP2_Shutdown stub"); }
-void HP2_Tick(float deltaTime) {}
+void HP2_Shutdown() {
+    LOGI("HP2_Shutdown scaffold");
+}
+
+void HP2_Tick(float deltaTime) {
+    (void)deltaTime;
+}
 
 void HP2_Render() {
     glClearColor(0.0f, 0.0f, 0.2f, 1.0f);
@@ -176,4 +223,23 @@ void HP2_Render() {
 void HP2_Resize(int width, int height) {
     glViewport(0, 0, width, height);
     LOGI("HP2_Resize: %dx%d", width, height);
+}
+
+// Input scaffolding used by ControllerManager JNI until the UE1 input bridge is
+// connected. Keeping it here makes controller plumbing testable without leaving
+// unresolved native symbols in the APK.
+void HP2_OnKeyEvent(int key, bool pressed) {
+    LOGI("Controller key: %d %s", key, pressed ? "down" : "up");
+}
+
+void HP2_OnAnalogEvent(float lx, float ly, float rx, float ry,
+                       float lt, float rt, float dpadX, float dpadY) {
+    (void)lx;
+    (void)ly;
+    (void)rx;
+    (void)ry;
+    (void)lt;
+    (void)rt;
+    (void)dpadX;
+    (void)dpadY;
 }
