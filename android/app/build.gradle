@@ -6,6 +6,7 @@ plugins {
 android {
     namespace 'com.hp2.mobile'
     compileSdk 34
+    ndkVersion '26.3.11579264'
 
     defaultConfig {
         applicationId "com.hp2.mobile"
@@ -25,6 +26,10 @@ android {
         ndk {
             abiFilters 'arm64-v8a'
         }
+    }
+
+    buildFeatures {
+        prefab true
     }
 
     buildTypes {

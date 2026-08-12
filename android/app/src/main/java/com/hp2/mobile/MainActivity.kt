@@ -1,17 +1,16 @@
 package com.hp2.mobile
 
-import android.app.NativeActivity
 import android.os.Bundle
-import android.view.View
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.google.androidgamesdk.GameActivity
 
 /**
- * HP2 Mobile - Native Activity Entry Point
- * Controller-only. No touch support.
+ * HP2 Mobile - GameActivity entry point.
+ * Controller-only. No touch UI is required by the port.
  */
-class MainActivity : NativeActivity() {
+class MainActivity : GameActivity() {
 
     companion object {
         init {
@@ -28,7 +27,7 @@ class MainActivity : NativeActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).let { controller ->
             controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = 
+            controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
