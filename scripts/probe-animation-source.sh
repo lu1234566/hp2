@@ -77,7 +77,7 @@ if ! find "$probe_root" -type f -iname 'HPModels.u' -print -quit | grep -q .; th
     exit 65
 fi
 
-echo "Building bounded animation probes..."
+echo "Building exact bounded HP2 animation probe..."
 build_dir="$probe_root/build"
 mkdir -p "$build_dir"
 common_sources=(
@@ -92,50 +92,28 @@ common_sources=(
 )
 common_flags=(-std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc/portcore/include)
 
-g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_probe.cpp \
-    -o "$build_dir/hp2_animation_probe" >"$report_root/build.log" 2>&1
-g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_motion_probe.cpp \
-    -o "$build_dir/hp2_animation_motion_probe" >>"$report_root/build.log" 2>&1
-g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_packed2_probe.cpp \
-    -o "$build_dir/hp2_animation_packed2_probe" >>"$report_root/build.log" 2>&1
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_exact_probe.cpp \
+    -o "$build_dir/hp2_animation_exact_probe" >"$report_root/build.log" 2>&1
 
-"$build_dir/hp2_animation_probe" "$probe_root" HPModels skGenMaleAnims \
-    >"$report_root/animation-skGenMaleAnims.json"
 set +e
-"$build_dir/hp2_animation_motion_probe" "$probe_root" HPModels skGenMaleAnims \
-    >"$report_root/animation-motion.json"
-motion_status=$?
+"$build_dir/hp2_animation_exact_probe" "$probe_root" HPModels skGenMaleAnims \
+    >"$report_root/animation-exact.json"
+probe_status=$?
 set -e
-"$build_dir/hp2_animation_packed2_probe" "$probe_root" HPModels skGenMaleAnims \
-    >"$report_root/animation-packed-after-boneindices.json"
 
-python3 - "$report_root/animation-skGenMaleAnims.json" \
-    "$report_root/animation-motion.json" \
-    "$report_root/animation-packed-after-boneindices.json" \
-    "$report_root/summary.json" "$cab_count" "$motion_status" <<'PY'
+python3 - "$report_root/animation-exact.json" "$report_root/summary.json" \
+    "$cab_count" "$probe_status" <<'PY'
 import json
 import pathlib
 import sys
-animation = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-motion = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
-packed = json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8"))
+exact = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v7",
-    "installshield_cab_sets": int(sys.argv[5]),
-    "motion_probe_exit_code": int(sys.argv[6]),
-    "package": animation.get("package"),
-    "object": animation.get("object"),
-    "class": animation.get("class"),
-    "version": animation.get("version"),
-    "native_bytes": animation.get("native_bytes"),
-    "bone_table_valid": animation.get("bone_table_valid"),
-    "bone_channel_count": animation.get("bone_channel_count"),
-    "mesh_name_matches": animation.get("mesh_name_matches"),
-    "mesh_parent_matches": animation.get("mesh_parent_matches"),
-    "motion": motion,
-    "packed_after_boneindices": packed.get("top", []),
+    "schema": "hp2-animation-source-summary-v8",
+    "installshield_cab_sets": int(sys.argv[3]),
+    "probe_exit_code": int(sys.argv[4]),
+    "exact": exact,
 }
-pathlib.Path(sys.argv[4]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+pathlib.Path(sys.argv[2]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
 
-echo "Animation metadata probe complete. Original media remains only in the temporary runner directory."
+echo "Exact HP2 animation metadata probe complete. Original media remains only in the temporary runner directory."
