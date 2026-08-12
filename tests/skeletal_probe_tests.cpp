@@ -104,8 +104,7 @@ void AppendPrimitiveBounds(std::vector<std::uint8_t>& payload) {
 
 std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     std::vector<std::uint8_t> payload;
-    AppendCompactIndex(payload, 0);  // tagged-property terminator
-
+    AppendCompactIndex(payload, 0);
     AppendPrimitiveBounds(payload);
 
     const std::size_t verts_end_offset = payload.size();
@@ -123,13 +122,13 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     WriteU32(payload, tris_end_offset,
              static_cast<std::uint32_t>(serial_offset + payload.size()));
 
-    AppendCompactIndex(payload, 1);  // animation sequence count
-    AppendCompactIndex(payload, 5);  // Idle
-    AppendCompactIndex(payload, 0);  // group None
-    AppendU32(payload, 0);           // start frame
-    AppendU32(payload, 4);           // frame count
-    AppendCompactIndex(payload, 0);  // notify count
-    AppendF32(payload, 30.0f);       // rate
+    AppendCompactIndex(payload, 1);
+    AppendCompactIndex(payload, 5);
+    AppendCompactIndex(payload, 0);
+    AppendU32(payload, 0);
+    AppendU32(payload, 4);
+    AppendCompactIndex(payload, 0);
+    AppendF32(payload, 30.0f);
 
     const std::size_t connects_end_offset = payload.size();
     AppendU32(payload, 0);
@@ -145,11 +144,11 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     WriteU32(payload, links_end_offset,
              static_cast<std::uint32_t>(serial_offset + payload.size()));
 
-    AppendCompactIndex(payload, 0);  // textures
-    AppendCompactIndex(payload, 0);  // bounding boxes
-    AppendCompactIndex(payload, 0);  // bounding spheres
-    AppendU32(payload, 3);           // frame vertices
-    AppendU32(payload, 4);           // animation frames
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendU32(payload, 3);
+    AppendU32(payload, 4);
     AppendU32(payload, 0);
     AppendU32(payload, 0);
     AppendVec3(payload, 1.0f, 1.0f, 1.0f);
@@ -159,15 +158,15 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     AppendU32(payload, 0);
     AppendU32(payload, 0);
     AppendU32(payload, 0);
-    AppendCompactIndex(payload, 0);  // TextureLOD
+    AppendCompactIndex(payload, 0);
 
-    AppendCompactIndex(payload, 0);  // CollapsePointThus
-    AppendCompactIndex(payload, 0);  // FaceLevel
-    AppendCompactIndex(payload, 0);  // Faces
-    AppendCompactIndex(payload, 0);  // CollapseWedgeThus
-    AppendCompactIndex(payload, 0);  // Wedges
-    AppendCompactIndex(payload, 0);  // Materials
-    AppendCompactIndex(payload, 0);  // SpecialFaces
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 0);
     AppendU32(payload, 0);
     AppendU32(payload, 0);
     AppendF32(payload, 0.0f);
@@ -176,17 +175,17 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     AppendU32(payload, 0);
     AppendF32(payload, 0.0f);
     AppendF32(payload, 0.0f);
-    AppendCompactIndex(payload, 0);  // ReMapAnimVerts
+    AppendCompactIndex(payload, 0);
     AppendU32(payload, 0);
 
-    AppendCompactIndex(payload, 0);  // ExtWedges
-    AppendCompactIndex(payload, 3);  // Points
+    AppendCompactIndex(payload, 0);
+    AppendCompactIndex(payload, 3);
     AppendVec3(payload, 0.0f, 0.0f, 0.0f);
     AppendVec3(payload, 1.0f, 0.0f, 0.0f);
     AppendVec3(payload, 0.0f, 1.0f, 0.0f);
 
-    AppendCompactIndex(payload, 2);  // RefSkeleton
-    AppendCompactIndex(payload, 6);  // Root
+    AppendCompactIndex(payload, 2);
+    AppendCompactIndex(payload, 6);
     AppendU32(payload, 0);
     AppendF32(payload, 0.0f);
     AppendF32(payload, 0.0f);
@@ -196,9 +195,9 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     AppendF32(payload, 1.0f);
     AppendVec3(payload, 1.0f, 1.0f, 1.0f);
     AppendU32(payload, 1);
-    AppendU32(payload, 0);           // root points to itself
+    AppendU32(payload, 0);
 
-    AppendCompactIndex(payload, 7);  // Hand
+    AppendCompactIndex(payload, 7);
     AppendU32(payload, 0);
     AppendF32(payload, 0.0f);
     AppendF32(payload, 0.0f);
@@ -210,7 +209,7 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     AppendU32(payload, 0);
     AppendU32(payload, 0);
 
-    AppendCompactIndex(payload, 3);  // BoneWeightIndices
+    AppendCompactIndex(payload, 3);
     AppendU32(payload, 0);
     AppendU32(payload, 0);
     AppendU32(payload, 1);
@@ -218,12 +217,12 @@ std::vector<std::uint8_t> MakeSkeletalPayload(std::int32_t serial_offset) {
     AppendU32(payload, 2);
     AppendU32(payload, 2);
 
-    AppendCompactIndex(payload, 3);  // BoneWeights
+    AppendCompactIndex(payload, 3);
     AppendF32(payload, 1.0f);
     AppendF32(payload, 0.75f);
     AppendF32(payload, 0.25f);
 
-    AppendCompactIndex(payload, 3);  // LocalPoints
+    AppendCompactIndex(payload, 3);
     AppendVec3(payload, 0.0f, 0.0f, 0.0f);
     AppendVec3(payload, 1.0f, 0.0f, 0.0f);
     AppendVec3(payload, 0.0f, 1.0f, 0.0f);
@@ -248,10 +247,10 @@ void WriteSyntheticSkeletalPackage(const std::filesystem::path& path) {
     }
 
     const std::size_t import_offset = bytes.size();
-    AppendCompactIndex(bytes, 1);  // Core
-    AppendCompactIndex(bytes, 2);  // Class
+    AppendCompactIndex(bytes, 1);
+    AppendCompactIndex(bytes, 2);
     AppendU32(bytes, 0);
-    AppendCompactIndex(bytes, 3);  // SkeletalMesh
+    AppendCompactIndex(bytes, 3);
 
     const std::size_t export_offset = bytes.size();
     std::size_t table_size = 16;
@@ -298,7 +297,7 @@ int main() {
     std::error_code error_code;
     std::filesystem::remove_all(root, error_code);
     std::filesystem::create_directories(root, error_code);
-    const std::filesystem::path package_path = root / "Synthetic.ukx";
+    const std::filesystem::path package_path = root / "Synthetic.u";
     WriteSyntheticSkeletalPackage(package_path);
 
     const hp2::PackageIndex package = hp2::LoadPackageIndex(package_path);
