@@ -2,6 +2,14 @@ name: Probe HP2 animation source
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "agent/hp2-g5d-skeletal-probe"
+    paths:
+      - ".github/workflows/probe-animation-source.yml"
+      - "scripts/probe-animation-source.sh"
+      - "tools/hp2_animation_probe.cpp"
+      - "src/portcore/**"
   pull_request:
     paths:
       - ".github/workflows/probe-animation-source.yml"
