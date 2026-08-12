@@ -1,0 +1,74 @@
+name: Build HP2 Mobile G5c2 dev
+
+on:
+  push:
+    branches: [main, "codex/**", "agent/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure PortCore
+        run: cmake -S . -B .local/build/cmake -DCMAKE_BUILD_TYPE=Release
+      - name: Build PortCore
+        run: cmake --build .local/build/cmake --parallel
+      - name: Run tests
+        run: ctest --test-dir .local/build/cmake --output-on-failure
+
+  android-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+      - name: Install Android build components
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.4.1"
+          cache-provider: basic
+      - name: Build data-free debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify launcher and native startup contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find android/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$apk"
+          unzip -p "$apk" lib/arm64-v8a/libhp2engine.so > "$RUNNER_TEMP/libhp2engine.so"
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-entries.txt"
+          readelf --dyn-syms --wide "$RUNNER_TEMP/libhp2engine.so" > "$RUNNER_TEMP/hp2engine-symbols.txt"
+          test -s "$RUNNER_TEMP/libhp2engine.so"
+          grep -Fxq 'lib/arm64-v8a/libc++_shared.so' "$RUNNER_TEMP/apk-entries.txt"
+          grep -Eq '[[:space:]]android_main$' "$RUNNER_TEMP/hp2engine-symbols.txt"
+          grep -Eq '[[:space:]]Java_com_google_androidgamesdk_GameActivity_initializeNativeCode$' "$RUNNER_TEMP/hp2engine-symbols.txt"
+          grep -Fq 'parent="Theme.AppCompat' android/app/src/main/res/values/themes.xml
+          grep -Fq 'com.hp2.mobile.LauncherActivity' android/app/src/main/AndroidManifest.xml
+          grep -Fq 'android.intent.category.LAUNCHER' android/app/src/main/AndroidManifest.xml
+          grep -Fq '"${PORTCORE_ROOT}/ue_model.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_texture.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_lightmap.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_actor.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_mesh.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq 'LoadSurfaceTextures' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq 'BuildVisibilityLightMapAtlas' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq 'LoadLevelActorCensus' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq 'LoadDirectActorMeshes' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq 'ScanClassDefaultProperties' src/portcore/ue_mesh.cpp
+          grep -Fq 'ToggleActorFocus' android/app/src/main/cpp/platform/android_main.cpp
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signing.txt"
+          grep -Fiq 'e853843728a61a4ffb5b6fa1141af5a74d9114039eac6daec53fde64b58d1e2d' "$RUNNER_TEMP/apk-signing.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HP2-Mobile-G5c2-dev-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,47 @@
+name: Probe original HP2 disc
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/probe-original-disc.yml"
+      - "CMakeLists.txt"
+      - "scripts/probe-original-disc.sh"
+      - "scripts/build-host.sh"
+      - "src/portcore/**"
+      - "tools/hp2_probe.cpp"
+      - "tools/hp2_map_probe.cpp"
+      - "tests/portcore_tests.cpp"
+
+permissions:
+  contents: read
+
+jobs:
+  original-disc-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HP2_DRIVE_URL: ${{ secrets.HP2_DRIVE_URL }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check private media configuration
+        run: |
+          if [[ -z "$HP2_DRIVE_URL" ]]; then
+            echo "HP2_DRIVE_URL is not configured as a repository secret." >&2
+            exit 64
+          fi
+      - name: Install disc inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes genisoimage iat libarchive-tools p7zip-full unshield
+          python3 -m pip install --disable-pip-version-check gdown==5.2.0
+      - name: Download, extract and probe original media
+        run: bash scripts/probe-original-disc.sh .local/hp2-disc-report
+      - name: Upload metadata-only report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: HP2-original-disc-report
+          path: .local/hp2-disc-report
+          if-no-files-found: warn
+          retention-days: 7

@@ -24,6 +24,10 @@
 
 # Build artifacts
 build/
+.local/
+CMakeFiles/
+CMakeCache.txt
+Testing/
 *.so
 *.apk
 *.obb
@@ -42,6 +46,13 @@ build/
 .gradle/
 local.properties
 *.iml
+
+# Original game data never belongs in Git
+Maps/
+Music/
+Sounds/
+System/
+Textures/
 
 # OS
 .DS_Store

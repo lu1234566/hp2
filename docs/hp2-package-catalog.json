@@ -1,0 +1,994 @@
+{
+  "schema": "hp2-package-catalog-v1",
+  "source": {
+    "kind": "owner-original-disc-metadata-only",
+    "mdf_bytes": 686921728,
+    "mdf_sha256": "3ad7a4d5ac4f9ccae70f60e07a74b805f65b30c45d6d19d6abfebc274ecdb681",
+    "installshield_cab_sets": 2
+  },
+  "summary": {
+    "package_count": 107,
+    "valid_count": 107,
+    "extensions": {
+      ".u": 11,
+      ".uax": 1,
+      ".unr": 42,
+      ".utx": 53
+    },
+    "versions": {
+      "61": 2,
+      "68": 2,
+      "69": 1,
+      "76": 17,
+      "79": 85
+    },
+    "licensee_versions": {
+      "0": 107
+    }
+  },
+  "packages": [
+    {
+      "path": "Maps/Adv11aCorridor.unr",
+      "size": 2806462,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 2780,
+      "imports": 170,
+      "exports": 2332
+    },
+    {
+      "path": "Maps/Adv11bSecrets.unr",
+      "size": 1818400,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 2841,
+      "imports": 166,
+      "exports": 2365
+    },
+    {
+      "path": "Maps/Adv12Chamber.unr",
+      "size": 401916,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1036,
+      "imports": 139,
+      "exports": 667
+    },
+    {
+      "path": "Maps/Adv1Willow.unr",
+      "size": 1902400,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 3486,
+      "imports": 181,
+      "exports": 2980
+    },
+    {
+      "path": "Maps/Adv3DungeonQuest.unr",
+      "size": 4547765,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 5000,
+      "imports": 320,
+      "exports": 4357
+    },
+    {
+      "path": "Maps/Adv4Greenhouse.unr",
+      "size": 1061594,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1965,
+      "imports": 194,
+      "exports": 1579
+    },
+    {
+      "path": "Maps/Adv6Goyle.unr",
+      "size": 5196990,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 5124,
+      "imports": 356,
+      "exports": 4452
+    },
+    {
+      "path": "Maps/Adv7SlythComRoom.unr",
+      "size": 3429403,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 4527,
+      "imports": 344,
+      "exports": 3711
+    },
+    {
+      "path": "Maps/Adv8Forest.unr",
+      "size": 2268278,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 2744,
+      "imports": 176,
+      "exports": 2272
+    },
+    {
+      "path": "Maps/Adv9Aragog.unr",
+      "size": 404796,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 978,
+      "imports": 97,
+      "exports": 694
+    },
+    {
+      "path": "Maps/Arena.unr",
+      "size": 507783,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1191,
+      "imports": 137,
+      "exports": 935
+    },
+    {
+      "path": "Maps/BeanRewardRoom.unr",
+      "size": 1009468,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1983,
+      "imports": 104,
+      "exports": 1692
+    },
+    {
+      "path": "Maps/Ch1Rictusempra.unr",
+      "size": 3942467,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 4836,
+      "imports": 280,
+      "exports": 4156
+    },
+    {
+      "path": "Maps/Ch2Skurge.unr",
+      "size": 5048719,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 6901,
+      "imports": 235,
+      "exports": 6268
+    },
+    {
+      "path": "Maps/Ch3Diffindo.unr",
+      "size": 4824526,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 7135,
+      "imports": 305,
+      "exports": 6341
+    },
+    {
+      "path": "Maps/Ch4Spongify.unr",
+      "size": 3834977,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 5878,
+      "imports": 275,
+      "exports": 5250
+    },
+    {
+      "path": "Maps/Ch6WizardCard.unr",
+      "size": 6589531,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 8263,
+      "imports": 310,
+      "exports": 7567
+    },
+    {
+      "path": "Maps/Ch7Gryffindor.unr",
+      "size": 2274329,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 3371,
+      "imports": 195,
+      "exports": 2974
+    },
+    {
+      "path": "Maps/Credits.unr",
+      "size": 35703,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 257,
+      "imports": 50,
+      "exports": 89
+    },
+    {
+      "path": "Maps/Duel01.unr",
+      "size": 247574,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 690,
+      "imports": 127,
+      "exports": 460
+    },
+    {
+      "path": "Maps/Duel02.unr",
+      "size": 245180,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 684,
+      "imports": 126,
+      "exports": 456
+    },
+    {
+      "path": "Maps/Duel03.unr",
+      "size": 245265,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 684,
+      "imports": 126,
+      "exports": 456
+    },
+    {
+      "path": "Maps/Duel04.unr",
+      "size": 249854,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 700,
+      "imports": 134,
+      "exports": 462
+    },
+    {
+      "path": "Maps/Duel05.unr",
+      "size": 249759,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 701,
+      "imports": 134,
+      "exports": 462
+    },
+    {
+      "path": "Maps/Duel06.unr",
+      "size": 251225,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 724,
+      "imports": 138,
+      "exports": 470
+    },
+    {
+      "path": "Maps/Duel07.unr",
+      "size": 250282,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 713,
+      "imports": 133,
+      "exports": 465
+    },
+    {
+      "path": "Maps/Duel08.unr",
+      "size": 245787,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 705,
+      "imports": 132,
+      "exports": 459
+    },
+    {
+      "path": "Maps/Duel09.unr",
+      "size": 253371,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 721,
+      "imports": 132,
+      "exports": 471
+    },
+    {
+      "path": "Maps/Duel10.unr",
+      "size": 234146,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 675,
+      "imports": 129,
+      "exports": 444
+    },
+    {
+      "path": "Maps/Entry.unr",
+      "size": 6626,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 96,
+      "imports": 19,
+      "exports": 23
+    },
+    {
+      "path": "Maps/Entryhall_hub.unr",
+      "size": 5096539,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 6402,
+      "imports": 479,
+      "exports": 5456
+    },
+    {
+      "path": "Maps/FlyingFordCutScene.unr",
+      "size": 1952853,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 755,
+      "imports": 86,
+      "exports": 517
+    },
+    {
+      "path": "Maps/Grandstaircase_hub.unr",
+      "size": 4354194,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 7019,
+      "imports": 555,
+      "exports": 5804
+    },
+    {
+      "path": "Maps/GreatHall_G.unr",
+      "size": 649901,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1359,
+      "imports": 149,
+      "exports": 1083
+    },
+    {
+      "path": "Maps/Grounds_hub.unr",
+      "size": 3563816,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 4335,
+      "imports": 318,
+      "exports": 3698
+    },
+    {
+      "path": "Maps/Grounds_Night.unr",
+      "size": 2010742,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 2975,
+      "imports": 207,
+      "exports": 2558
+    },
+    {
+      "path": "Maps/PrivetDr.unr",
+      "size": 1333972,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 2468,
+      "imports": 209,
+      "exports": 2079
+    },
+    {
+      "path": "Maps/Quidditch.unr",
+      "size": 1521307,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1774,
+      "imports": 167,
+      "exports": 1331
+    },
+    {
+      "path": "Maps/Quidditch_Intro.unr",
+      "size": 384229,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 817,
+      "imports": 97,
+      "exports": 505
+    },
+    {
+      "path": "Maps/Sepia_Hallway.unr",
+      "size": 446379,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 737,
+      "imports": 88,
+      "exports": 555
+    },
+    {
+      "path": "Maps/startup.unr",
+      "size": 18993,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 173,
+      "imports": 32,
+      "exports": 60
+    },
+    {
+      "path": "Maps/Transition.unr",
+      "size": 766488,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 936,
+      "imports": 65,
+      "exports": 748
+    },
+    {
+      "path": "Sounds/AllDialog.uax",
+      "size": 94169928,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 2406,
+      "imports": 4,
+      "exports": 2397
+    },
+    {
+      "path": "System/Core.u",
+      "size": 61684,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 332,
+      "imports": 16,
+      "exports": 720
+    },
+    {
+      "path": "System/Editor.u",
+      "size": 126406,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 294,
+      "imports": 35,
+      "exports": 377
+    },
+    {
+      "path": "System/Engine.u",
+      "size": 1470047,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 4288,
+      "imports": 69,
+      "exports": 6847
+    },
+    {
+      "path": "System/Fire.u",
+      "size": 6612,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 172,
+      "imports": 15,
+      "exports": 108
+    },
+    {
+      "path": "System/hgame.u",
+      "size": 17559707,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 10249,
+      "imports": 1937,
+      "exports": 16746
+    },
+    {
+      "path": "System/HPModels.u",
+      "size": 36725690,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 3004,
+      "imports": 12,
+      "exports": 1193
+    },
+    {
+      "path": "System/HPParticle.u",
+      "size": 2335723,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 809,
+      "imports": 90,
+      "exports": 1025
+    },
+    {
+      "path": "System/HProps.u",
+      "size": 14765296,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1491,
+      "imports": 13,
+      "exports": 1489
+    },
+    {
+      "path": "System/HPSounds.u",
+      "size": 44353621,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1147,
+      "imports": 8,
+      "exports": 1143
+    },
+    {
+      "path": "System/UnrealShare.u",
+      "size": 5720,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 23,
+      "imports": 8,
+      "exports": 5
+    },
+    {
+      "path": "System/UWindow.u",
+      "size": 608825,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 1433,
+      "imports": 102,
+      "exports": 3462
+    },
+    {
+      "path": "Textures/3DWizardCards.utx",
+      "size": 2940348,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 90,
+      "imports": 5,
+      "exports": 71
+    },
+    {
+      "path": "Textures/AOLDemo_HP2.utx",
+      "size": 2885870,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 142,
+      "imports": 5,
+      "exports": 138
+    },
+    {
+      "path": "Textures/AragogLev.utx",
+      "size": 3080341,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 54,
+      "imports": 5,
+      "exports": 36
+    },
+    {
+      "path": "Textures/BitOGoyle.utx",
+      "size": 5589635,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 178,
+      "imports": 5,
+      "exports": 202
+    },
+    {
+      "path": "Textures/BL_CocaCola.utx",
+      "size": 2678925,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 104,
+      "imports": 5,
+      "exports": 96
+    },
+    {
+      "path": "Textures/chamber.utx",
+      "size": 2188496,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 119,
+      "imports": 11,
+      "exports": 96
+    },
+    {
+      "path": "Textures/Detail.utx",
+      "size": 1729964,
+      "version": 61,
+      "licensee_version": 0,
+      "names": 90,
+      "imports": 5,
+      "exports": 51
+    },
+    {
+      "path": "Textures/Diffindo.utx",
+      "size": 3904144,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 126,
+      "imports": 5,
+      "exports": 150
+    },
+    {
+      "path": "Textures/Dungeon.utx",
+      "size": 1184357,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 48,
+      "imports": 5,
+      "exports": 37
+    },
+    {
+      "path": "Textures/DungeonQuest.utx",
+      "size": 3066802,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 118,
+      "imports": 5,
+      "exports": 120
+    },
+    {
+      "path": "Textures/EntryHallHub.utx",
+      "size": 135272,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 25,
+      "imports": 5,
+      "exports": 7
+    },
+    {
+      "path": "Textures/FindHermione.utx",
+      "size": 521177,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 48,
+      "imports": 5,
+      "exports": 30
+    },
+    {
+      "path": "Textures/FlareFX.utx",
+      "size": 185218,
+      "version": 68,
+      "licensee_version": 0,
+      "names": 34,
+      "imports": 3,
+      "exports": 16
+    },
+    {
+      "path": "Textures/FlipendoBlocks.utx",
+      "size": 150027,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 30,
+      "imports": 5,
+      "exports": 14
+    },
+    {
+      "path": "Textures/FlyingFord.utx",
+      "size": 2588624,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 74,
+      "imports": 5,
+      "exports": 61
+    },
+    {
+      "path": "Textures/ForbiddenForest.utx",
+      "size": 3043644,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 85,
+      "imports": 5,
+      "exports": 83
+    },
+    {
+      "path": "Textures/GenFluid.utx",
+      "size": 5734160,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 211,
+      "imports": 5,
+      "exports": 200
+    },
+    {
+      "path": "Textures/GenFX.utx",
+      "size": 9803,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 22,
+      "imports": 5,
+      "exports": 4
+    },
+    {
+      "path": "Textures/GrandStaircase.utx",
+      "size": 9939152,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 248,
+      "imports": 5,
+      "exports": 349
+    },
+    {
+      "path": "Textures/greenhouse_hp2.utx",
+      "size": 3235560,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 109,
+      "imports": 5,
+      "exports": 113
+    },
+    {
+      "path": "Textures/GroundsHub.utx",
+      "size": 5295588,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 145,
+      "imports": 5,
+      "exports": 162
+    },
+    {
+      "path": "Textures/HP2_Master.utx",
+      "size": 17740556,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 575,
+      "imports": 5,
+      "exports": 637
+    },
+    {
+      "path": "Textures/HP2_Menu.utx",
+      "size": 3488502,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 298,
+      "imports": 8,
+      "exports": 247
+    },
+    {
+      "path": "Textures/HP_FX.utx",
+      "size": 2050704,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 306,
+      "imports": 13,
+      "exports": 302
+    },
+    {
+      "path": "Textures/HP_Logo.utx",
+      "size": 264048,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 25,
+      "imports": 3,
+      "exports": 6
+    },
+    {
+      "path": "Textures/HP_Portraits2.utx",
+      "size": 1606778,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 145,
+      "imports": 5,
+      "exports": 127
+    },
+    {
+      "path": "Textures/HP_Quidditch.utx",
+      "size": 966503,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 80,
+      "imports": 5,
+      "exports": 71
+    },
+    {
+      "path": "Textures/HP_Scripted.utx",
+      "size": 80544,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 39,
+      "imports": 6,
+      "exports": 16
+    },
+    {
+      "path": "Textures/HP_Titles.utx",
+      "size": 182957,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 26,
+      "imports": 5,
+      "exports": 7
+    },
+    {
+      "path": "Textures/HPEdit.utx",
+      "size": 140041,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 62,
+      "imports": 5,
+      "exports": 45
+    },
+    {
+      "path": "Textures/Intro_CS.utx",
+      "size": 997748,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 90,
+      "imports": 5,
+      "exports": 84
+    },
+    {
+      "path": "Textures/Liquids.utx",
+      "size": 16876,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 83,
+      "imports": 31,
+      "exports": 14
+    },
+    {
+      "path": "Textures/MenuArt.utx",
+      "size": 177668,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 23,
+      "imports": 3,
+      "exports": 4
+    },
+    {
+      "path": "Textures/Old_textures/CVresearch.utx",
+      "size": 2711924,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 152,
+      "imports": 10,
+      "exports": 111
+    },
+    {
+      "path": "Textures/Old_textures/HP_1st.utx",
+      "size": 1407704,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 71,
+      "imports": 5,
+      "exports": 54
+    },
+    {
+      "path": "Textures/Old_textures/HP_Basic.utx",
+      "size": 3051293,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 147,
+      "imports": 6,
+      "exports": 147
+    },
+    {
+      "path": "Textures/Old_textures/HP_Menu.utx",
+      "size": 1644592,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 251,
+      "imports": 7,
+      "exports": 214
+    },
+    {
+      "path": "Textures/Palettes.utx",
+      "size": 421024,
+      "version": 61,
+      "licensee_version": 0,
+      "names": 186,
+      "imports": 5,
+      "exports": 168
+    },
+    {
+      "path": "Textures/Particles.utx",
+      "size": 179422,
+      "version": 69,
+      "licensee_version": 0,
+      "names": 57,
+      "imports": 3,
+      "exports": 39
+    },
+    {
+      "path": "Textures/Potions.utx",
+      "size": 871420,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 57,
+      "imports": 5,
+      "exports": 43
+    },
+    {
+      "path": "Textures/PrivetDrive.utx",
+      "size": 2332481,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 143,
+      "imports": 5,
+      "exports": 141
+    },
+    {
+      "path": "Textures/Rictusempra.utx",
+      "size": 3146180,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 129,
+      "imports": 5,
+      "exports": 144
+    },
+    {
+      "path": "Textures/Skurge.utx",
+      "size": 2167400,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 108,
+      "imports": 5,
+      "exports": 108
+    },
+    {
+      "path": "Textures/SkyBox.utx",
+      "size": 4480754,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 79,
+      "imports": 5,
+      "exports": 68
+    },
+    {
+      "path": "Textures/SlytherinCR.utx",
+      "size": 3777151,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 158,
+      "imports": 7,
+      "exports": 156
+    },
+    {
+      "path": "Textures/SpellShapes.utx",
+      "size": 465088,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 105,
+      "imports": 7,
+      "exports": 65
+    },
+    {
+      "path": "Textures/Spongify.utx",
+      "size": 3167724,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 115,
+      "imports": 5,
+      "exports": 130
+    },
+    {
+      "path": "Textures/TomRiddle.utx",
+      "size": 1368602,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 61,
+      "imports": 5,
+      "exports": 45
+    },
+    {
+      "path": "Textures/Transfig_Tex.utx",
+      "size": 570242,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 46,
+      "imports": 5,
+      "exports": 30
+    },
+    {
+      "path": "Textures/UWindowFonts.utx",
+      "size": 1755486,
+      "version": 68,
+      "licensee_version": 0,
+      "names": 70,
+      "imports": 4,
+      "exports": 53
+    },
+    {
+      "path": "Textures/WhompingWillow.utx",
+      "size": 2886751,
+      "version": 79,
+      "licensee_version": 0,
+      "names": 96,
+      "imports": 5,
+      "exports": 95
+    },
+    {
+      "path": "Textures/Wizard.utx",
+      "size": 888729,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 42,
+      "imports": 5,
+      "exports": 23
+    },
+    {
+      "path": "Textures/WizardDuel.utx",
+      "size": 1231124,
+      "version": 76,
+      "licensee_version": 0,
+      "names": 89,
+      "imports": 5,
+      "exports": 69
+    }
+  ]
+}

@@ -1,10 +1,18 @@
 <resources>
-    <style name="Theme.HP2Mobile" parent="Theme.Material3.Dark.NoActionBar">
+    <style name="Theme.HP2Mobile" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowFullscreen">true</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#090C16</item>
+        <item name="android:statusBarColor">#090C16</item>
+        <item name="android:navigationBarColor">#090C16</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">#75DC97</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
     <style name="Theme.HP2Mobile.Fullscreen" parent="Theme.HP2Mobile">
+        <item name="android:windowFullscreen">true</item>
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 </resources>

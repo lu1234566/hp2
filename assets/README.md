@@ -1,9 +1,5 @@
-# Game Assets
+# No game assets
 
-Place original HP2 PC game files here:
-- Maps/ (*.unr)
-- Sounds/ (*.umx, *.wav)
-- System/ (*.u, *.int, *.ini)
-- Textures/ (*.utx)
+This directory is documentation-only. Original HP2 files are never packaged in the repository or APK.
 
-These will be packaged into an OBB expansion file.
+For a local device, `scripts/install-game-data.*` copies the owner's installed PC data to the app-specific external directory at runtime.

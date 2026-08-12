@@ -1,25 +1,23 @@
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
 }
 
 android {
     namespace 'com.hp2.mobile'
-    compileSdk 34
+    compileSdk 36
+    ndkVersion '28.2.13676358'
 
     defaultConfig {
         applicationId "com.hp2.mobile"
         minSdk 26
-        targetSdk 34
-        versionCode 1
-        versionName "0.1.0-alpha"
+        targetSdk 36
+        versionCode 9
+        versionName "0.6.3-g5c2-dev"
 
         externalNativeBuild {
             cmake {
-                cppFlags "-std=c++17 -O3 -DANDROID -DNDEBUG"
-                arguments "-DANDROID_STL=c++_shared",
-                          "-DANDROID_PLATFORM=android-26",
-                          "-DANDROID_ARM_NEON=ON"
+                cppFlags "-std=c++17"
+                arguments "-DANDROID_STL=c++_shared"
             }
         }
         ndk {
@@ -27,22 +25,23 @@ android {
         }
     }
 
+    signingConfigs {
+        development {
+            storeFile file('../dev-signing.keystore')
+            storePassword 'hp2mobiledev'
+            keyAlias 'hp2-dev'
+            keyPassword 'hp2mobiledev'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.development
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            externalNativeBuild {
-                cmake {
-                    cppFlags "-std=c++17 -O3 -DANDROID -DNDEBUG -fvisibility=hidden"
-                }
-            }
-        }
-        debug {
-            externalNativeBuild {
-                cmake {
-                    cppFlags "-std=c++17 -O0 -g -DANDROID -DDEBUG"
-                }
-            }
+            ndk.debugSymbolLevel = 'SYMBOL_TABLE'
         }
     }
 
@@ -57,15 +56,18 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = '17'
+
+    buildFeatures {
+        prefab true
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = false
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.games:games-activity:3.0.3'
-    implementation 'androidx.games:games-controller:2.0.1'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.games:games-activity:4.4.1'
 }
