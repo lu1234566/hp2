@@ -8,7 +8,7 @@ on:
     paths:
       - ".github/workflows/probe-animation-source.yml"
       - "scripts/probe-animation-source.sh"
-      - "tools/hp2_animation_probe.cpp"
+      - "tools/hp2_animation*.cpp"
       - "src/portcore/**"
 
 permissions:
