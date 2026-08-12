@@ -9,6 +9,7 @@
 #include <limits>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace {
 
@@ -48,6 +49,9 @@ struct IndexLaneStats {
     bool high_monotonic = true;
     std::size_t low_unique = 0;
     std::size_t high_unique = 0;
+    std::size_t interval_union_slots = 0;
+    std::size_t interval_overlap_slots = 0;
+    std::size_t interval_gap_slots = 0;
 };
 
 IndexLaneStats MeasureIndexLanes(const hp2::SkeletalMeshSkinningData& data) {
@@ -58,6 +62,7 @@ IndexLaneStats MeasureIndexLanes(const hp2::SkeletalMeshSkinningData& data) {
     std::uint16_t previous_high = 0;
     bool first = true;
     const std::size_t influence_count = data.weight_words.size();
+    std::vector<std::uint16_t> coverage(influence_count, 0u);
 
     for (const auto& record : data.weight_indices) {
         const auto low = static_cast<std::uint16_t>(record.first & 0xffffu);
@@ -75,6 +80,11 @@ IndexLaneStats MeasureIndexLanes(const hp2::SkeletalMeshSkinningData& data) {
             + static_cast<std::uint32_t>(high);
         stats.low_plus_high_max = std::max(stats.low_plus_high_max, end_candidate);
         stats.low_plus_high_within_influences += end_candidate <= influence_count ? 1u : 0u;
+        if (end_candidate <= influence_count) {
+            for (std::size_t slot = low; slot < end_candidate; ++slot) {
+                ++coverage[slot];
+            }
+        }
         if (!first) {
             stats.low_monotonic = stats.low_monotonic && low >= previous_low;
             stats.high_monotonic = stats.high_monotonic && high >= previous_high;
@@ -91,6 +101,11 @@ IndexLaneStats MeasureIndexLanes(const hp2::SkeletalMeshSkinningData& data) {
     }
     stats.low_unique = low_values.size();
     stats.high_unique = high_values.size();
+    for (const auto count : coverage) {
+        stats.interval_union_slots += count > 0u ? 1u : 0u;
+        stats.interval_overlap_slots += count > 1u ? 1u : 0u;
+        stats.interval_gap_slots += count == 0u ? 1u : 0u;
+    }
     return stats;
 }
 
@@ -110,6 +125,14 @@ struct WeightLaneStats {
     std::size_t low16_unique = 0;
     std::size_t high16_unique = 0;
     std::size_t raw_zero = 0;
+    std::uint64_t high16_sum = 0;
+    std::uint64_t point_weight_sum_min = 0;
+    std::uint64_t point_weight_sum_max = 0;
+    std::size_t point_weight_sum_65535 = 0;
+    std::size_t point_weight_sum_65536 = 0;
+    std::size_t point_weight_sum_other = 0;
+    std::size_t points_with_weights = 0;
+    std::size_t max_influences_per_point = 0;
 };
 
 WeightLaneStats MeasureWeightLanes(const hp2::SkeletalMeshSkinningData& data) {
@@ -117,6 +140,8 @@ WeightLaneStats MeasureWeightLanes(const hp2::SkeletalMeshSkinningData& data) {
     std::unordered_set<std::uint16_t> low16_values;
     std::unordered_set<std::uint16_t> high16_values;
     std::array<std::unordered_set<std::uint8_t>, 4> byte_values;
+    std::vector<std::uint64_t> point_weight_sums(data.reference_point_count, 0u);
+    std::vector<std::size_t> point_influence_counts(data.reference_point_count, 0u);
 
     for (const auto& word : data.weight_words) {
         const std::uint16_t low16 = static_cast<std::uint16_t>(word.raw & 0xffffu);
@@ -130,6 +155,11 @@ WeightLaneStats MeasureWeightLanes(const hp2::SkeletalMeshSkinningData& data) {
         stats.low16_within_bones += low16 < data.bones.size() ? 1u : 0u;
         stats.high16_within_bones += high16 < data.bones.size() ? 1u : 0u;
         stats.raw_zero += word.raw == 0u ? 1u : 0u;
+        stats.high16_sum += high16;
+        if (low16 < data.reference_point_count) {
+            point_weight_sums[low16] += high16;
+            ++point_influence_counts[low16];
+        }
         low16_values.insert(low16);
         high16_values.insert(high16);
         for (std::size_t lane = 0; lane < 4; ++lane) {
@@ -149,6 +179,28 @@ WeightLaneStats MeasureWeightLanes(const hp2::SkeletalMeshSkinningData& data) {
     stats.high16_unique = high16_values.size();
     for (std::size_t lane = 0; lane < 4; ++lane) {
         stats.byte_unique[lane] = byte_values[lane].size();
+    }
+
+    bool have_point = false;
+    for (std::size_t index = 0; index < point_weight_sums.size(); ++index) {
+        const std::size_t influences = point_influence_counts[index];
+        if (influences == 0u) {
+            continue;
+        }
+        const std::uint64_t sum = point_weight_sums[index];
+        ++stats.points_with_weights;
+        stats.max_influences_per_point = std::max(stats.max_influences_per_point, influences);
+        if (!have_point) {
+            stats.point_weight_sum_min = sum;
+            stats.point_weight_sum_max = sum;
+            have_point = true;
+        } else {
+            stats.point_weight_sum_min = std::min(stats.point_weight_sum_min, sum);
+            stats.point_weight_sum_max = std::max(stats.point_weight_sum_max, sum);
+        }
+        stats.point_weight_sum_65535 += sum == 65535u ? 1u : 0u;
+        stats.point_weight_sum_65536 += sum == 65536u ? 1u : 0u;
+        stats.point_weight_sum_other += (sum != 65535u && sum != 65536u) ? 1u : 0u;
     }
     return stats;
 }
@@ -179,7 +231,7 @@ int main(int argc, char** argv) {
     const bool have_finite_weight = data.finite_weight_words > 0;
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-skeletal-probe-v2\",\n"
+              << "  \"schema\": \"hp2-skeletal-probe-v3\",\n"
               << "  \"valid\": " << (data.valid ? "true" : "false") << ",\n"
               << "  \"package_name\": \"" << JsonEscape(data.package_name) << "\",\n"
               << "  \"object_name\": \"" << JsonEscape(data.object_name) << "\",\n"
@@ -209,6 +261,9 @@ int main(int argc, char** argv) {
               << "  \"weight_index_high16_within_influences\": " << index_lanes.high_within_influences << ",\n"
               << "  \"weight_index_low_plus_high_max\": " << index_lanes.low_plus_high_max << ",\n"
               << "  \"weight_index_low_plus_high_within_influences\": " << index_lanes.low_plus_high_within_influences << ",\n"
+              << "  \"weight_index_interval_union_slots\": " << index_lanes.interval_union_slots << ",\n"
+              << "  \"weight_index_interval_overlap_slots\": " << index_lanes.interval_overlap_slots << ",\n"
+              << "  \"weight_index_interval_gap_slots\": " << index_lanes.interval_gap_slots << ",\n"
               << "  \"weight_words\": " << data.weight_words.size() << ",\n"
               << "  \"weight_word_raw_zero\": " << weight_lanes.raw_zero << ",\n"
               << "  \"weight_word_low16_min\": " << weight_lanes.low16_min << ",\n"
@@ -221,6 +276,7 @@ int main(int argc, char** argv) {
               << "  \"weight_word_high16_unique\": " << weight_lanes.high16_unique << ",\n"
               << "  \"weight_word_high16_within_points\": " << weight_lanes.high16_within_points << ",\n"
               << "  \"weight_word_high16_within_bones\": " << weight_lanes.high16_within_bones << ",\n"
+              << "  \"weight_word_high16_sum\": " << weight_lanes.high16_sum << ",\n"
               << "  \"weight_word_byte_min\": ["
               << static_cast<unsigned>(weight_lanes.byte_min[0]) << ", "
               << static_cast<unsigned>(weight_lanes.byte_min[1]) << ", "
@@ -237,6 +293,13 @@ int main(int argc, char** argv) {
               << "  \"weight_word_byte_within_bones\": ["
               << weight_lanes.byte_within_bones[0] << ", " << weight_lanes.byte_within_bones[1] << ", "
               << weight_lanes.byte_within_bones[2] << ", " << weight_lanes.byte_within_bones[3] << "],\n"
+              << "  \"points_with_weight_records\": " << weight_lanes.points_with_weights << ",\n"
+              << "  \"max_influences_per_point\": " << weight_lanes.max_influences_per_point << ",\n"
+              << "  \"point_weight_sum_min\": " << weight_lanes.point_weight_sum_min << ",\n"
+              << "  \"point_weight_sum_max\": " << weight_lanes.point_weight_sum_max << ",\n"
+              << "  \"point_weight_sum_65535\": " << weight_lanes.point_weight_sum_65535 << ",\n"
+              << "  \"point_weight_sum_65536\": " << weight_lanes.point_weight_sum_65536 << ",\n"
+              << "  \"point_weight_sum_other\": " << weight_lanes.point_weight_sum_other << ",\n"
               << "  \"finite_weight_words\": " << data.finite_weight_words << ",\n"
               << "  \"unit_interval_weight_words\": " << data.unit_interval_weight_words << ",\n"
               << "  \"nonfinite_weight_words\": " << data.nonfinite_weight_words << ",\n"
