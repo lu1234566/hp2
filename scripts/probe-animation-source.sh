@@ -77,7 +77,7 @@ if ! find "$probe_root" -type f -iname 'HPModels.u' -print -quit | grep -q .; th
     exit 65
 fi
 
-echo "Building corrected TLazyArray HP2 animation probe..."
+echo "Building semantic HP2 animation probe..."
 build_dir="$probe_root/build"
 mkdir -p "$build_dir"
 common_sources=(
@@ -92,25 +92,32 @@ common_sources=(
 )
 common_flags=(-std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc/portcore/include)
 
-g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_lazy2_probe.cpp \
-    -o "$build_dir/hp2_animation_lazy2_probe" >"$report_root/build.log" 2>&1
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_semantic_probe.cpp \
+    -o "$build_dir/hp2_animation_semantic_probe" >"$report_root/build.log" 2>&1
 
-"$build_dir/hp2_animation_lazy2_probe" "$probe_root" HPModels skGenMaleAnims \
-    >"$report_root/animation-lazy2-candidates.json"
+"$build_dir/hp2_animation_semantic_probe" "$probe_root" HPModels skGenMaleAnims \
+    >"$report_root/animation-semantic.json"
 
-python3 - "$report_root/animation-lazy2-candidates.json" "$report_root/summary.json" \
+python3 - "$report_root/animation-semantic.json" "$report_root/summary.json" \
     "$cab_count" <<'PY'
 import json
 import pathlib
 import sys
 probe = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v9",
+    "schema": "hp2-animation-source-summary-v10",
     "installshield_cab_sets": int(sys.argv[3]),
-    "best_candidate": probe["candidates"][0] if probe.get("candidates") else None,
-    "candidate_count": len(probe.get("candidates", [])),
+    "file_version": probe.get("file_version"),
+    "licensee_version": probe.get("licensee_version"),
+    "refbones": probe.get("refbones"),
+    "moves": probe.get("moves"),
+    "bone_indices": probe.get("bone_indices"),
+    "anim_tracks": probe.get("anim_tracks"),
+    "track0": probe.get("track0"),
+    "track1_prefix": probe.get("track1_prefix"),
+    "boundary_candidates": probe.get("boundary_candidates", []),
 }
 pathlib.Path(sys.argv[2]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
 
-echo "Corrected TLazyArray animation metadata probe complete. Original media remains only in the temporary runner directory."
+echo "Semantic HP2 animation probe complete. Original media remains only in the temporary runner directory."
