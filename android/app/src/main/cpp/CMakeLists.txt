@@ -19,7 +19,7 @@ set(PLATFORM_SOURCES
 add_library(hp2engine SHARED ${PLATFORM_SOURCES})
 
 target_link_libraries(hp2engine
-    game-activity::game-activity
+    game-activity::game-activity_static
     android
     log
     EGL
