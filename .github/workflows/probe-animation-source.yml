@@ -10,12 +10,6 @@ on:
       - "scripts/probe-animation-source.sh"
       - "tools/hp2_animation_probe.cpp"
       - "src/portcore/**"
-  pull_request:
-    paths:
-      - ".github/workflows/probe-animation-source.yml"
-      - "scripts/probe-animation-source.sh"
-      - "tools/hp2_animation_probe.cpp"
-      - "src/portcore/**"
 
 permissions:
   contents: read
