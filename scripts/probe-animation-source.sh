@@ -77,7 +77,7 @@ if ! find "$probe_root" -type f -iname 'HPModels.u' -print -quit | grep -q .; th
     exit 65
 fi
 
-echo "Building exact bounded HP2 animation probe..."
+echo "Building corrected TLazyArray HP2 animation probe..."
 build_dir="$probe_root/build"
 mkdir -p "$build_dir"
 common_sources=(
@@ -92,28 +92,25 @@ common_sources=(
 )
 common_flags=(-std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc/portcore/include)
 
-g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_exact_probe.cpp \
-    -o "$build_dir/hp2_animation_exact_probe" >"$report_root/build.log" 2>&1
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_lazy2_probe.cpp \
+    -o "$build_dir/hp2_animation_lazy2_probe" >"$report_root/build.log" 2>&1
 
-set +e
-"$build_dir/hp2_animation_exact_probe" "$probe_root" HPModels skGenMaleAnims \
-    >"$report_root/animation-exact.json"
-probe_status=$?
-set -e
+"$build_dir/hp2_animation_lazy2_probe" "$probe_root" HPModels skGenMaleAnims \
+    >"$report_root/animation-lazy2-candidates.json"
 
-python3 - "$report_root/animation-exact.json" "$report_root/summary.json" \
-    "$cab_count" "$probe_status" <<'PY'
+python3 - "$report_root/animation-lazy2-candidates.json" "$report_root/summary.json" \
+    "$cab_count" <<'PY'
 import json
 import pathlib
 import sys
-exact = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+probe = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v8",
+    "schema": "hp2-animation-source-summary-v9",
     "installshield_cab_sets": int(sys.argv[3]),
-    "probe_exit_code": int(sys.argv[4]),
-    "exact": exact,
+    "best_candidate": probe["candidates"][0] if probe.get("candidates") else None,
+    "candidate_count": len(probe.get("candidates", [])),
 }
 pathlib.Path(sys.argv[2]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
 
-echo "Exact HP2 animation metadata probe complete. Original media remains only in the temporary runner directory."
+echo "Corrected TLazyArray animation metadata probe complete. Original media remains only in the temporary runner directory."
