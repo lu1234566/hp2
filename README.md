@@ -24,6 +24,11 @@ visual checkpoint without requiring a controller. G5c now resolves decoration
 meshes and transform defaults inherited from imported UE1 classes. Its device
 diagnostic alternates automatically between the complete room and an
 actor/object-only view; controller **A** remains an optional manual override.
+The first G5c capture exposed 24 inherited human meshes with an impossible
+`DrawScale` of `200.0`, producing torn giant fragments. G5c2 rejects only that
+extreme inherited value, falls back to `1.0`, and records the recovery in the
+private metadata report; direct actor scales remain untouched. The corrected
+automatic capture is the current acceptance test.
 No original asset is included in Git or the APK.
 
 The current foundation provides:
@@ -135,7 +140,7 @@ changing the decoded geometry or its world placement. The subsequent Galaxy
 A57 capture clearly showed the textured student model in a coherent base pose,
 so G5b is visually approved. The device had no controller connected; that is
 not a failure because the image itself covers the visual acceptance criterion.
-G5c diagnostics now cycle views automatically for the same reason.
+G5c/G5c2 diagnostics cycle views automatically for the same reason.
 
 The G5c private probe resolved 76 inherited mesh candidates in addition to the
 two direct references. It decoded 73 visible inherited instances across 27
@@ -144,7 +149,9 @@ props such as the throne, tables, footstools, candles, hanging lamps, fireplace
 logs and a jar, as well as character classes. In total, the actor/object path
 produced 32,595 triangles; 21,219 use 41 decoded original materials, with zero
 material failures. Only these names and aggregate counts left the ephemeral
-runner. The next acceptance evidence is the G5c device capture.
+runner. The first device capture then failed because 24 inherited character
+scales were decoded as `200.0`; G5c2 rejects that extreme inherited value and
+is awaiting the corrected automatic device capture.
 
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
@@ -156,7 +163,7 @@ runner. The next acceptance evidence is the G5c device capture.
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G5c-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G5c2-dev-debug` from the workflow run's
 **Artifacts** section.
 
 Development APKs from G3a onward use the checked-in, non-production development
@@ -209,7 +216,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
 | G4 | Lightmaps and recognizable room | PASS — visibly confirmed on Galaxy A57 |
-| G5 | Actors, meshes and animation | IN PROGRESS — G5b visual PASS; G5c inherited decoration meshes |
+| G5 | Actors, meshes and animation | IN PROGRESS — G5b visual PASS; G5c2 inherited-scale retest |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
 | G8 | Android performance and full controller validation | Pending |

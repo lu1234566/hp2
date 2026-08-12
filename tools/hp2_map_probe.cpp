@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v7\",\n"
+              << "  \"schema\": \"hp2-map-index-v8\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -281,6 +281,8 @@ int main(int argc, char** argv) {
               << "    \"decoded_mesh_instances\": " << actor_meshes.decoded_mesh_instances << ",\n"
               << "    \"decoded_inherited_mesh_instances\": "
               << actor_meshes.decoded_inherited_mesh_instances << ",\n"
+              << "    \"rejected_inherited_draw_scales\": "
+              << actor_meshes.rejected_inherited_draw_scales << ",\n"
               << "    \"failed_mesh_instances\": " << actor_meshes.failed_mesh_instances << ",\n"
               << "    \"source_triangles\": " << actor_meshes.source_triangles << ",\n"
               << "    \"textured_triangles\": " << actor_meshes.textured_triangles << ",\n"
@@ -330,6 +332,9 @@ int main(int argc, char** argv) {
                   << ", \"draw_scale\": " << instance.draw_scale
                   << ", \"inherited_draw_scale\": "
                   << (instance.inherited_draw_scale ? "true" : "false")
+                  << ", \"source_draw_scale\": " << instance.source_draw_scale
+                  << ", \"rejected_inherited_draw_scale\": "
+                  << (instance.rejected_inherited_draw_scale ? "true" : "false")
                   << ", \"has_draw_scale_3d\": "
                   << (instance.has_draw_scale_3d ? "true" : "false")
                   << ", \"draw_scale_3d\": [" << instance.draw_scale_3d.x << ", "

@@ -11,8 +11,8 @@ android {
         applicationId "com.hp2.mobile"
         minSdk 26
         targetSdk 36
-        versionCode 8
-        versionName "0.6.2-g5c-dev"
+        versionCode 9
+        versionName "0.6.3-g5c2-dev"
 
         externalNativeBuild {
             cmake {

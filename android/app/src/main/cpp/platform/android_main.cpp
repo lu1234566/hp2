@@ -1126,11 +1126,13 @@ private:
             LOGE("G5 actor census failed: %s", actors.error.c_str());
         }
         if (actor_meshes.valid) {
-            LOGI("G5 actor meshes ready: candidates=%zu direct=%zu inherited=%zu classes=%zu defaults=%zu assets=%zu instances=%zu failures=%zu triangles=%zu textured=%zu materials=%zu",
+            LOGI("G5 actor meshes ready: candidates=%zu direct=%zu inherited=%zu classes=%zu defaults=%zu assets=%zu instances=%zu scale_rejections=%zu failures=%zu triangles=%zu textured=%zu materials=%zu",
                  actor_meshes.candidate_instances, actor_meshes.direct_mesh_candidates,
                  actor_meshes.inherited_mesh_candidates, actor_meshes.class_exports_scanned,
                  actor_meshes.class_default_streams_found, actor_meshes.decoded_mesh_assets,
-                 actor_meshes.decoded_mesh_instances, actor_meshes.failed_mesh_instances,
+                 actor_meshes.decoded_mesh_instances,
+                 actor_meshes.rejected_inherited_draw_scales,
+                 actor_meshes.failed_mesh_instances,
                  actor_meshes.source_triangles, actor_meshes.textured_triangles,
                  actor_meshes.decoded_materials);
         } else {

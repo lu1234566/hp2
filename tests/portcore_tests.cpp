@@ -107,7 +107,12 @@ void AppendExportRecord(
     AppendCompactIndex(bytes, serial_offset);
 }
 
-void WriteSyntheticActorPackage(const std::filesystem::path& path) {
+void WriteSyntheticActorPackage(
+    const std::filesystem::path& path,
+    const std::string& class_package_name = "ActorClasses",
+    bool has_direct_draw_scale = false,
+    float direct_draw_scale = 1.0f
+) {
     std::vector<std::uint8_t> bytes(64, 0);
     WriteU32(bytes, 0, hp2::kUnrealPackageTag);
     WriteU16(bytes, 4, 79);
@@ -115,7 +120,7 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
     const std::vector<std::string> names = {
         "None", "Core", "Class", "Level", "Decoration", "MyLevel", "Chair0",
         "Location", "Vector", "Rotation", "Rotator", "DrawScale3D", "PrePivot",
-        "bHidden", "Package", "ActorClasses"
+        "bHidden", "Package", class_package_name, "DrawScale"
     };
     const std::size_t name_offset = bytes.size();
     for (const auto& name : names) {
@@ -172,6 +177,11 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
 
     AppendCompactIndex(actor_payload, 13);  // bHidden
     actor_payload.push_back(0x03u);         // Bool false, no payload
+    if (has_direct_draw_scale) {
+        AppendCompactIndex(actor_payload, 16);  // DrawScale
+        actor_payload.push_back(0x24u);         // Float, four bytes
+        AppendF32(actor_payload, direct_draw_scale);
+    }
     AppendCompactIndex(actor_payload, 0);   // None
 
     const std::size_t export_offset = bytes.size();
@@ -208,7 +218,10 @@ void WriteSyntheticActorPackage(const std::filesystem::path& path) {
     output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
-void WriteSyntheticClassPackage(const std::filesystem::path& path) {
+void WriteSyntheticClassPackage(
+    const std::filesystem::path& path,
+    float draw_scale = 1.25f
+) {
     std::vector<std::uint8_t> bytes(64, 0);
     WriteU32(bytes, 0, hp2::kUnrealPackageTag);
     WriteU16(bytes, 4, 79);
@@ -238,7 +251,7 @@ void WriteSyntheticClassPackage(const std::filesystem::path& path) {
     AppendCompactIndex(class_payload, -2);  // ChairMesh import
     AppendCompactIndex(class_payload, 9);   // DrawScale
     class_payload.push_back(0x24u);         // Float, four bytes
-    AppendF32(class_payload, 1.25f);
+    AppendF32(class_payload, draw_scale);
     AppendCompactIndex(class_payload, 0);   // None
 
     const std::size_t export_offset = bytes.size();
@@ -503,6 +516,14 @@ int main() {
     WriteSyntheticMeshPackage(root / "System" / "MeshPack.u");
     WriteSyntheticClassPackage(root / "System" / "ActorClasses.u");
     WriteSyntheticActorPackage(root / "Maps" / "SyntheticActors.unr");
+    WriteSyntheticClassPackage(root / "System" / "ActorClassesExtreme.u", 200.0f);
+    WriteSyntheticActorPackage(
+        root / "Maps" / "SyntheticActorsExtreme.unr", "ActorClassesExtreme"
+    );
+    WriteSyntheticActorPackage(
+        root / "Maps" / "SyntheticActorsDirectExtreme.unr",
+        "ActorClassesExtreme", true, 200.0f
+    );
 
     std::vector<std::uint8_t> bytes(64, 0);
     WriteU32(bytes, 0, hp2::kUnrealPackageTag);
@@ -781,6 +802,8 @@ int main() {
                      && actor_mesh_scene.instances.size() == 1
                      && actor_mesh_scene.instances[0].inherited_mesh
                      && actor_mesh_scene.instances[0].inherited_draw_scale
+                     && actor_mesh_scene.instances[0].source_draw_scale == 1.25f
+                     && !actor_mesh_scene.instances[0].rejected_inherited_draw_scale
                      && actor_mesh_scene.instances[0].emitted_triangles == 1
                      && actor_mesh_scene.instances[0].bounds_valid
                      && actor_mesh_scene.triangles.size() == 1
@@ -791,6 +814,43 @@ int main() {
                      && actor_mesh_scene.assets[0].object_name == "ChairMesh"
                      && actor_mesh_scene.assets[0].vertex_bounds_valid,
                  "placed actor triangles and mesh asset summaries should remain bounded");
+
+    const auto extreme_actor_package = hp2::LoadPackageIndex(
+        root / "Maps" / "SyntheticActorsExtreme.unr"
+    );
+    const auto extreme_actor_census = hp2::LoadLevelActorCensus(extreme_actor_package);
+    const auto extreme_actor_mesh_scene = hp2::LoadDirectActorMeshes(
+        root, extreme_actor_package, extreme_actor_census
+    );
+    ok &= Expect(extreme_actor_mesh_scene.valid
+                     && extreme_actor_mesh_scene.rejected_inherited_draw_scales == 1
+                     && extreme_actor_mesh_scene.instances.size() == 1
+                     && extreme_actor_mesh_scene.instances[0].inherited_draw_scale
+                     && extreme_actor_mesh_scene.instances[0].source_draw_scale == 200.0f
+                     && extreme_actor_mesh_scene.instances[0].rejected_inherited_draw_scale
+                     && !extreme_actor_mesh_scene.instances[0].has_draw_scale
+                     && extreme_actor_mesh_scene.instances[0].draw_scale == 1.0f
+                     && extreme_actor_mesh_scene.instances[0].bounds_max.x
+                         - extreme_actor_mesh_scene.instances[0].bounds_min.x < 100.0f,
+                 "extreme inherited DrawScale should fall back without altering direct values");
+
+    const auto direct_extreme_actor_package = hp2::LoadPackageIndex(
+        root / "Maps" / "SyntheticActorsDirectExtreme.unr"
+    );
+    const auto direct_extreme_actor_census = hp2::LoadLevelActorCensus(
+        direct_extreme_actor_package
+    );
+    const auto direct_extreme_actor_mesh_scene = hp2::LoadDirectActorMeshes(
+        root, direct_extreme_actor_package, direct_extreme_actor_census
+    );
+    ok &= Expect(direct_extreme_actor_mesh_scene.valid
+                     && direct_extreme_actor_mesh_scene.rejected_inherited_draw_scales == 0
+                     && direct_extreme_actor_mesh_scene.instances.size() == 1
+                     && !direct_extreme_actor_mesh_scene.instances[0].inherited_draw_scale
+                     && !direct_extreme_actor_mesh_scene.instances[0].rejected_inherited_draw_scale
+                     && direct_extreme_actor_mesh_scene.instances[0].has_draw_scale
+                     && direct_extreme_actor_mesh_scene.instances[0].draw_scale == 200.0f,
+                 "direct actor DrawScale overrides should remain authoritative");
 
     hp2::Runtime runtime;
     runtime.Initialize(root);

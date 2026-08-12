@@ -20,6 +20,13 @@ constexpr std::int32_t kMaxVertices = 20'000'000;
 constexpr std::int32_t kMaxTriangles = 5'000'000;
 constexpr std::int32_t kMaxMeshEntries = 40'000'000;
 constexpr std::int32_t kMaxMaterials = 65'536;
+// G5 renders stored reference-pose vertices in Unreal world units. The private
+// Duel10 probe found valid actor scales from 0.75 to 2.5, while a malformed
+// inherited class-default path produced 200.0 and expanded human meshes past
+// 20,000 units. Keep direct actor overrides untouched and reject only extreme
+// inherited defaults until full UClass default-object serialization replaces
+// the bounded tail scanner.
+constexpr float kMaxTrustedInheritedDrawScale = 16.0f;
 
 std::string Lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
@@ -950,6 +957,8 @@ ActorMeshScene LoadDirectActorMeshes(
         }
         ActorInstance effective_actor = actor;
         bool inherited_draw_scale = false;
+        bool rejected_inherited_draw_scale = false;
+        float source_draw_scale = effective_actor.draw_scale;
         const ResolvedClassDefaults defaults = defaults_for_actor(actor);
         auto default_property = [&](const char* name) -> const ClassPropertySource* {
             const auto found = defaults.properties.find(name);
@@ -966,6 +975,14 @@ ActorMeshScene LoadDirectActorMeshes(
             effective_actor.has_draw_scale = value != nullptr
                 && DecodePropertyFloat(&value->property, effective_actor.draw_scale);
             inherited_draw_scale = effective_actor.has_draw_scale;
+            source_draw_scale = effective_actor.draw_scale;
+            if (inherited_draw_scale
+                && std::abs(effective_actor.draw_scale) > kMaxTrustedInheritedDrawScale) {
+                effective_actor.has_draw_scale = false;
+                effective_actor.draw_scale = 1.0f;
+                rejected_inherited_draw_scale = true;
+                ++result.rejected_inherited_draw_scales;
+            }
         }
         if (!effective_actor.has_draw_scale_3d) {
             const ClassPropertySource* value = default_property("drawscale3d");
@@ -1085,6 +1102,8 @@ ActorMeshScene LoadDirectActorMeshes(
         instance.has_draw_scale = effective_actor.has_draw_scale;
         instance.draw_scale = effective_actor.draw_scale;
         instance.inherited_draw_scale = inherited_draw_scale;
+        instance.source_draw_scale = source_draw_scale;
+        instance.rejected_inherited_draw_scale = rejected_inherited_draw_scale;
         instance.has_draw_scale_3d = effective_actor.has_draw_scale_3d;
         instance.draw_scale_3d = effective_actor.draw_scale_3d;
         instance.source_triangles = mesh.triangles.size();

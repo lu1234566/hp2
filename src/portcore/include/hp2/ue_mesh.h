@@ -77,6 +77,8 @@ struct ActorMeshInstanceSummary {
     bool has_draw_scale = false;
     float draw_scale = 1.0f;
     bool inherited_draw_scale = false;
+    float source_draw_scale = 1.0f;
+    bool rejected_inherited_draw_scale = false;
     bool has_draw_scale_3d = false;
     Vec3 draw_scale_3d{1.0f, 1.0f, 1.0f};
     std::size_t source_triangles = 0;
@@ -99,6 +101,7 @@ struct ActorMeshScene {
     std::size_t decoded_mesh_assets = 0;
     std::size_t decoded_mesh_instances = 0;
     std::size_t decoded_inherited_mesh_instances = 0;
+    std::size_t rejected_inherited_draw_scales = 0;
     std::size_t failed_mesh_instances = 0;
     std::size_t source_triangles = 0;
     std::size_t textured_triangles = 0;

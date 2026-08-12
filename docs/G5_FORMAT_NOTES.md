@@ -112,6 +112,25 @@ bounds would make the object-only diagnostic too small. The focus copy therefore
 includes only triangles whose centroid lies within the BSP bounds plus an 8%
 margin; this does not alter any world placement or source geometry.
 
-G5 is not complete at G5c: inherited mesh coverage now needs its device capture,
-while skeletal animation, collision and scripted behavior remain separate
-acceptance steps.
+## G5c device failure and G5c2 scale correction
+
+The first G5c Galaxy A57 capture was a visual **FAIL** even though decoding and
+all four diagnostic bars completed. It showed torn, overlapping character
+fragments and one giant close-up instead of the inherited objects. A new
+metadata-only placement audit measured 24 human meshes at 16,000–21,000 world
+units tall. Every affected instance received an inherited `DrawScale` of
+`200.0`; no direct actor override had that value. The same directly referenced
+duelist had already been validated at roughly 88 units in G5b. All plausible
+instances in this map use scales from `0.75` through `2.5`.
+
+G5c2 therefore leaves direct actor overrides untouched and rejects only an
+extreme scale recovered from the provisional inherited-class tail scanner.
+Rejected instances fall back to the UE actor default of `1.0`, and the report
+records both the source value and rejection count. A synthetic external-class
+fixture covers both a valid inherited scale and the rejected `200.0` regression.
+The automatic room/object cycle remains enabled so the correction can be
+verified without a controller.
+
+G5 is not complete at G5c2: inherited object placement needs its corrected
+device capture, while skeletal animation, collision and scripted behavior
+remain separate acceptance steps.

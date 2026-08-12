@@ -126,7 +126,7 @@ scene = g2.get("g4_scene", {})
 actors = g2.get("g5_actor_census", {})
 mesh_scene = g2.get("g5_mesh_scene", g2.get("g5_direct_mesh_scene", {}))
 summary = {
-    "schema": "hp2-original-disc-probe-v10",
+    "schema": "hp2-original-disc-probe-v11",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -201,6 +201,9 @@ summary = {
     "g5_decoded_mesh_instances": mesh_scene.get("decoded_mesh_instances", 0),
     "g5_decoded_inherited_mesh_instances": mesh_scene.get(
         "decoded_inherited_mesh_instances", 0
+    ),
+    "g5_rejected_inherited_draw_scales": mesh_scene.get(
+        "rejected_inherited_draw_scales", 0
     ),
     "g5_failed_mesh_instances": mesh_scene.get("failed_mesh_instances", 0),
     "g5_actor_mesh_triangles": mesh_scene.get("source_triangles", 0),
