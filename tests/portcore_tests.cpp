@@ -780,6 +780,7 @@ int main() {
                      && actor_mesh_scene.source_triangles == 1
                      && actor_mesh_scene.instances.size() == 1
                      && actor_mesh_scene.instances[0].inherited_mesh
+                     && actor_mesh_scene.instances[0].inherited_draw_scale
                      && actor_mesh_scene.instances[0].emitted_triangles == 1
                      && actor_mesh_scene.instances[0].bounds_valid
                      && actor_mesh_scene.triangles.size() == 1

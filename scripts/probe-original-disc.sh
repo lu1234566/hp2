@@ -126,7 +126,7 @@ scene = g2.get("g4_scene", {})
 actors = g2.get("g5_actor_census", {})
 mesh_scene = g2.get("g5_mesh_scene", g2.get("g5_direct_mesh_scene", {}))
 summary = {
-    "schema": "hp2-original-disc-probe-v9",
+    "schema": "hp2-original-disc-probe-v10",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),

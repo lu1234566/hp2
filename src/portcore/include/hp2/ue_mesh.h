@@ -76,6 +76,7 @@ struct ActorMeshInstanceSummary {
     Vec3 pre_pivot;
     bool has_draw_scale = false;
     float draw_scale = 1.0f;
+    bool inherited_draw_scale = false;
     bool has_draw_scale_3d = false;
     Vec3 draw_scale_3d{1.0f, 1.0f, 1.0f};
     std::size_t source_triangles = 0;

@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v6\",\n"
+              << "  \"schema\": \"hp2-map-index-v7\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -328,6 +328,8 @@ int main(int argc, char** argv) {
                   << instance.pre_pivot.y << ", " << instance.pre_pivot.z << "]"
                   << ", \"has_draw_scale\": " << (instance.has_draw_scale ? "true" : "false")
                   << ", \"draw_scale\": " << instance.draw_scale
+                  << ", \"inherited_draw_scale\": "
+                  << (instance.inherited_draw_scale ? "true" : "false")
                   << ", \"has_draw_scale_3d\": "
                   << (instance.has_draw_scale_3d ? "true" : "false")
                   << ", \"draw_scale_3d\": [" << instance.draw_scale_3d.x << ", "

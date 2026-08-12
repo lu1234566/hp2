@@ -949,6 +949,7 @@ ActorMeshScene LoadDirectActorMeshes(
             break;
         }
         ActorInstance effective_actor = actor;
+        bool inherited_draw_scale = false;
         const ResolvedClassDefaults defaults = defaults_for_actor(actor);
         auto default_property = [&](const char* name) -> const ClassPropertySource* {
             const auto found = defaults.properties.find(name);
@@ -964,6 +965,7 @@ ActorMeshScene LoadDirectActorMeshes(
             const ClassPropertySource* value = default_property("drawscale");
             effective_actor.has_draw_scale = value != nullptr
                 && DecodePropertyFloat(&value->property, effective_actor.draw_scale);
+            inherited_draw_scale = effective_actor.has_draw_scale;
         }
         if (!effective_actor.has_draw_scale_3d) {
             const ClassPropertySource* value = default_property("drawscale3d");
@@ -1082,6 +1084,7 @@ ActorMeshScene LoadDirectActorMeshes(
         instance.pre_pivot = effective_actor.pre_pivot;
         instance.has_draw_scale = effective_actor.has_draw_scale;
         instance.draw_scale = effective_actor.draw_scale;
+        instance.inherited_draw_scale = inherited_draw_scale;
         instance.has_draw_scale_3d = effective_actor.has_draw_scale_3d;
         instance.draw_scale_3d = effective_actor.draw_scale_3d;
         instance.source_triangles = mesh.triangles.size();
