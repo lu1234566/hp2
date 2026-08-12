@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -205,6 +206,275 @@ WeightLaneStats MeasureWeightLanes(const hp2::SkeletalMeshSkinningData& data) {
     return stats;
 }
 
+struct DVec3 {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
+struct Quat {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+    double w = 1.0;
+};
+
+struct Transform {
+    Quat rotation;
+    DVec3 position;
+};
+
+DVec3 Add(const DVec3& a, const DVec3& b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+DVec3 Scale(const DVec3& value, double scale) {
+    return {value.x * scale, value.y * scale, value.z * scale};
+}
+
+DVec3 ToDVec3(const hp2::Vec3& value) {
+    return {value.x, value.y, value.z};
+}
+
+Quat Normalize(Quat value) {
+    const double length = std::sqrt(
+        value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w
+    );
+    if (length <= 1.0e-12) {
+        return {};
+    }
+    value.x /= length;
+    value.y /= length;
+    value.z /= length;
+    value.w /= length;
+    return value;
+}
+
+Quat Conjugate(Quat value) {
+    value.x = -value.x;
+    value.y = -value.y;
+    value.z = -value.z;
+    return value;
+}
+
+Quat Multiply(const Quat& a, const Quat& b) {
+    return Normalize({
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    });
+}
+
+DVec3 Rotate(const Quat& q_in, const DVec3& value) {
+    const Quat q = Normalize(q_in);
+    const DVec3 u{q.x, q.y, q.z};
+    const double dot_uv = u.x * value.x + u.y * value.y + u.z * value.z;
+    const double dot_uu = u.x * u.x + u.y * u.y + u.z * u.z;
+    const DVec3 cross{
+        u.y * value.z - u.z * value.y,
+        u.z * value.x - u.x * value.z,
+        u.x * value.y - u.y * value.x,
+    };
+    return Add(Add(
+        Scale(u, 2.0 * dot_uv),
+        Scale(value, q.w * q.w - dot_uu)
+    ), Scale(cross, 2.0 * q.w));
+}
+
+Quat BoneQuat(const hp2::SkeletalReferenceBone& bone, bool wxyz, bool conjugate) {
+    Quat value;
+    if (wxyz) {
+        value = {bone.orientation[1], bone.orientation[2], bone.orientation[3], bone.orientation[0]};
+    } else {
+        value = {bone.orientation[0], bone.orientation[1], bone.orientation[2], bone.orientation[3]};
+    }
+    value = Normalize(value);
+    return conjugate ? Conjugate(value) : value;
+}
+
+bool ResolveHierarchyTransform(
+    const hp2::SkeletalMeshSkinningData& data,
+    std::size_t bone_index,
+    bool wxyz,
+    bool conjugate,
+    bool reverse_compose,
+    std::vector<Transform>& transforms,
+    std::vector<std::uint8_t>& states
+) {
+    if (bone_index >= data.bones.size()) {
+        return false;
+    }
+    if (states[bone_index] == 2u) {
+        return true;
+    }
+    if (states[bone_index] == 1u) {
+        return false;
+    }
+    states[bone_index] = 1u;
+    const auto& bone = data.bones[bone_index];
+    const Transform local{BoneQuat(bone, wxyz, conjugate), ToDVec3(bone.position)};
+    const std::int32_t parent = bone.parent_index;
+    if (parent < 0 || parent == static_cast<std::int32_t>(bone_index)) {
+        transforms[bone_index] = local;
+    } else {
+        if (parent >= static_cast<std::int32_t>(data.bones.size())
+            || !ResolveHierarchyTransform(
+                data, static_cast<std::size_t>(parent), wxyz, conjugate,
+                reverse_compose, transforms, states
+            )) {
+            return false;
+        }
+        const Transform& parent_transform = transforms[static_cast<std::size_t>(parent)];
+        transforms[bone_index].rotation = reverse_compose
+            ? Multiply(local.rotation, parent_transform.rotation)
+            : Multiply(parent_transform.rotation, local.rotation);
+        transforms[bone_index].position = Add(
+            parent_transform.position,
+            Rotate(parent_transform.rotation, local.position)
+        );
+    }
+    states[bone_index] = 2u;
+    return true;
+}
+
+struct BindCandidate {
+    std::string name;
+    bool valid = false;
+    std::size_t compared_points = 0;
+    double rms_error = 0.0;
+    double max_error = 0.0;
+};
+
+BindCandidate EvaluateBindCandidate(
+    const hp2::SkeletalMeshSkinningData& data,
+    const std::string& name,
+    bool hierarchy,
+    bool wxyz,
+    bool conjugate,
+    bool reverse_compose
+) {
+    BindCandidate result;
+    result.name = name;
+    if (data.bones.empty() || data.reference_points.empty()
+        || data.weight_words.size() != data.local_points.size()
+        || data.weight_indices.size() != data.bones.size()) {
+        return result;
+    }
+
+    std::vector<Transform> transforms(data.bones.size());
+    if (hierarchy) {
+        std::vector<std::uint8_t> states(data.bones.size(), 0u);
+        for (std::size_t index = 0; index < data.bones.size(); ++index) {
+            if (!ResolveHierarchyTransform(
+                    data, index, wxyz, conjugate, reverse_compose, transforms, states)) {
+                return result;
+            }
+        }
+    } else {
+        for (std::size_t index = 0; index < data.bones.size(); ++index) {
+            transforms[index] = {
+                BoneQuat(data.bones[index], wxyz, conjugate),
+                ToDVec3(data.bones[index].position)
+            };
+        }
+    }
+
+    std::vector<std::int32_t> influence_bone(data.weight_words.size(), -1);
+    for (std::size_t bone_index = 0; bone_index < data.weight_indices.size(); ++bone_index) {
+        const std::uint32_t packed = data.weight_indices[bone_index].first;
+        const std::size_t first = packed & 0xffffu;
+        const std::size_t count = (packed >> 16u) & 0xffffu;
+        if (first + count > influence_bone.size()) {
+            return result;
+        }
+        for (std::size_t slot = first; slot < first + count; ++slot) {
+            if (influence_bone[slot] != -1) {
+                return result;
+            }
+            influence_bone[slot] = static_cast<std::int32_t>(bone_index);
+        }
+    }
+    if (std::find(influence_bone.begin(), influence_bone.end(), -1) != influence_bone.end()) {
+        return result;
+    }
+
+    std::vector<DVec3> accum(data.reference_points.size());
+    std::vector<std::uint64_t> weight_sums(data.reference_points.size(), 0u);
+    for (std::size_t slot = 0; slot < data.weight_words.size(); ++slot) {
+        const std::uint32_t packed = data.weight_words[slot].raw;
+        const std::size_t point_index = packed & 0xffffu;
+        const std::uint32_t weight = (packed >> 16u) & 0xffffu;
+        const std::int32_t bone_index = influence_bone[slot];
+        if (point_index >= accum.size() || bone_index < 0
+            || static_cast<std::size_t>(bone_index) >= transforms.size()) {
+            return result;
+        }
+        const Transform& transform = transforms[static_cast<std::size_t>(bone_index)];
+        const DVec3 local = ToDVec3(data.local_points[slot]);
+        const DVec3 placed = Add(transform.position, Rotate(transform.rotation, local));
+        accum[point_index] = Add(accum[point_index], Scale(placed, static_cast<double>(weight)));
+        weight_sums[point_index] += weight;
+    }
+
+    double squared_sum = 0.0;
+    double max_squared = 0.0;
+    for (std::size_t point_index = 0; point_index < data.reference_points.size(); ++point_index) {
+        if (weight_sums[point_index] == 0u) {
+            continue;
+        }
+        const DVec3 predicted = Scale(
+            accum[point_index], 1.0 / static_cast<double>(weight_sums[point_index])
+        );
+        const DVec3 reference = ToDVec3(data.reference_points[point_index]);
+        const double dx = predicted.x - reference.x;
+        const double dy = predicted.y - reference.y;
+        const double dz = predicted.z - reference.z;
+        const double squared = dx * dx + dy * dy + dz * dz;
+        squared_sum += squared;
+        max_squared = std::max(max_squared, squared);
+        ++result.compared_points;
+    }
+    if (result.compared_points == 0u) {
+        return result;
+    }
+    result.rms_error = std::sqrt(squared_sum / static_cast<double>(result.compared_points));
+    result.max_error = std::sqrt(max_squared);
+    result.valid = std::isfinite(result.rms_error) && std::isfinite(result.max_error);
+    return result;
+}
+
+std::vector<BindCandidate> EvaluateBindCandidates(const hp2::SkeletalMeshSkinningData& data) {
+    std::vector<BindCandidate> candidates;
+    const struct Variant {
+        const char* name;
+        bool hierarchy;
+        bool wxyz;
+        bool conjugate;
+        bool reverse;
+    } variants[] = {
+        {"hier_xyzw", true, false, false, false},
+        {"hier_xyzw_conjugate", true, false, true, false},
+        {"hier_wxyz", true, true, false, false},
+        {"hier_wxyz_conjugate", true, true, true, false},
+        {"hier_reverse_xyzw", true, false, false, true},
+        {"hier_reverse_xyzw_conjugate", true, false, true, true},
+        {"hier_reverse_wxyz", true, true, false, true},
+        {"hier_reverse_wxyz_conjugate", true, true, true, true},
+        {"absolute_xyzw", false, false, false, false},
+        {"absolute_xyzw_conjugate", false, false, true, false},
+        {"absolute_wxyz", false, true, false, false},
+        {"absolute_wxyz_conjugate", false, true, true, false},
+    };
+    for (const auto& variant : variants) {
+        candidates.push_back(EvaluateBindCandidate(
+            data, variant.name, variant.hierarchy, variant.wxyz,
+            variant.conjugate, variant.reverse
+        ));
+    }
+    return candidates;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -218,6 +488,13 @@ int main(int argc, char** argv) {
     );
     const IndexLaneStats index_lanes = MeasureIndexLanes(data);
     const WeightLaneStats weight_lanes = MeasureWeightLanes(data);
+    const std::vector<BindCandidate> bind_candidates = EvaluateBindCandidates(data);
+    const BindCandidate* best_bind = nullptr;
+    for (const auto& candidate : bind_candidates) {
+        if (candidate.valid && (best_bind == nullptr || candidate.rms_error < best_bind->rms_error)) {
+            best_bind = &candidate;
+        }
+    }
 
     float min_weight = std::numeric_limits<float>::infinity();
     float max_weight = -std::numeric_limits<float>::infinity();
@@ -231,7 +508,7 @@ int main(int argc, char** argv) {
     const bool have_finite_weight = data.finite_weight_words > 0;
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-skeletal-probe-v3\",\n"
+              << "  \"schema\": \"hp2-skeletal-probe-v4\",\n"
               << "  \"valid\": " << (data.valid ? "true" : "false") << ",\n"
               << "  \"package_name\": \"" << JsonEscape(data.package_name) << "\",\n"
               << "  \"object_name\": \"" << JsonEscape(data.object_name) << "\",\n"
@@ -300,6 +577,40 @@ int main(int argc, char** argv) {
               << "  \"point_weight_sum_65535\": " << weight_lanes.point_weight_sum_65535 << ",\n"
               << "  \"point_weight_sum_65536\": " << weight_lanes.point_weight_sum_65536 << ",\n"
               << "  \"point_weight_sum_other\": " << weight_lanes.point_weight_sum_other << ",\n"
+              << "  \"bind_candidate_count\": " << bind_candidates.size() << ",\n"
+              << "  \"best_bind_candidate\": ";
+    if (best_bind != nullptr) {
+        std::cout << "\"" << JsonEscape(best_bind->name) << "\",\n"
+                  << "  \"best_bind_rms_error\": " << best_bind->rms_error << ",\n"
+                  << "  \"best_bind_max_error\": " << best_bind->max_error << ",\n"
+                  << "  \"best_bind_points\": " << best_bind->compared_points << ",\n";
+    } else {
+        std::cout << "null,\n"
+                  << "  \"best_bind_rms_error\": null,\n"
+                  << "  \"best_bind_max_error\": null,\n"
+                  << "  \"best_bind_points\": 0,\n";
+    }
+    std::cout << "  \"bind_candidates\": [\n";
+    for (std::size_t index = 0; index < bind_candidates.size(); ++index) {
+        const auto& candidate = bind_candidates[index];
+        std::cout << "    {\"name\": \"" << JsonEscape(candidate.name)
+                  << "\", \"valid\": " << (candidate.valid ? "true" : "false")
+                  << ", \"points\": " << candidate.compared_points
+                  << ", \"rms_error\": ";
+        if (candidate.valid) {
+            std::cout << candidate.rms_error;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << ", \"max_error\": ";
+        if (candidate.valid) {
+            std::cout << candidate.max_error;
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "}" << (index + 1 == bind_candidates.size() ? "" : ",") << '\n';
+    }
+    std::cout << "  ],\n"
               << "  \"finite_weight_words\": " << data.finite_weight_words << ",\n"
               << "  \"unit_interval_weight_words\": " << data.unit_interval_weight_words << ",\n"
               << "  \"nonfinite_weight_words\": " << data.nonfinite_weight_words << ",\n"
