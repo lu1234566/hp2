@@ -2,14 +2,16 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -34,176 +36,92 @@ std::string JsonEscape(const std::string& value) {
     return result;
 }
 
-struct IndexLaneStats {
-    std::uint16_t low_min = std::numeric_limits<std::uint16_t>::max();
-    std::uint16_t low_max = 0;
-    std::uint16_t high_min = std::numeric_limits<std::uint16_t>::max();
-    std::uint16_t high_max = 0;
-    std::uint64_t low_sum = 0;
-    std::uint64_t high_sum = 0;
-    std::size_t second_nonzero = 0;
-    std::size_t low_within_influences = 0;
-    std::size_t high_within_influences = 0;
-    std::size_t low_plus_high_within_influences = 0;
-    std::uint32_t low_plus_high_max = 0;
-    bool low_monotonic = true;
-    bool high_monotonic = true;
-    std::size_t low_unique = 0;
-    std::size_t high_unique = 0;
-    std::size_t interval_union_slots = 0;
-    std::size_t interval_overlap_slots = 0;
-    std::size_t interval_gap_slots = 0;
-};
-
-IndexLaneStats MeasureIndexLanes(const hp2::SkeletalMeshSkinningData& data) {
-    IndexLaneStats stats;
-    std::unordered_set<std::uint16_t> low_values;
-    std::unordered_set<std::uint16_t> high_values;
-    std::uint16_t previous_low = 0;
-    std::uint16_t previous_high = 0;
-    bool first = true;
-    const std::size_t influence_count = data.weight_words.size();
-    std::vector<std::uint16_t> coverage(influence_count, 0u);
-
-    for (const auto& record : data.weight_indices) {
-        const auto low = static_cast<std::uint16_t>(record.first & 0xffffu);
-        const auto high = static_cast<std::uint16_t>((record.first >> 16u) & 0xffffu);
-        stats.low_min = std::min(stats.low_min, low);
-        stats.low_max = std::max(stats.low_max, low);
-        stats.high_min = std::min(stats.high_min, high);
-        stats.high_max = std::max(stats.high_max, high);
-        stats.low_sum += low;
-        stats.high_sum += high;
-        stats.second_nonzero += record.second != 0u ? 1u : 0u;
-        stats.low_within_influences += low <= influence_count ? 1u : 0u;
-        stats.high_within_influences += high <= influence_count ? 1u : 0u;
-        const std::uint32_t end_candidate = static_cast<std::uint32_t>(low)
-            + static_cast<std::uint32_t>(high);
-        stats.low_plus_high_max = std::max(stats.low_plus_high_max, end_candidate);
-        stats.low_plus_high_within_influences += end_candidate <= influence_count ? 1u : 0u;
-        if (end_candidate <= influence_count) {
-            for (std::size_t slot = low; slot < end_candidate; ++slot) {
-                ++coverage[slot];
-            }
-        }
-        if (!first) {
-            stats.low_monotonic = stats.low_monotonic && low >= previous_low;
-            stats.high_monotonic = stats.high_monotonic && high >= previous_high;
-        }
-        previous_low = low;
-        previous_high = high;
-        first = false;
-        low_values.insert(low);
-        high_values.insert(high);
-    }
-    if (data.weight_indices.empty()) {
-        stats.low_min = 0;
-        stats.high_min = 0;
-    }
-    stats.low_unique = low_values.size();
-    stats.high_unique = high_values.size();
-    for (const auto count : coverage) {
-        stats.interval_union_slots += count > 0u ? 1u : 0u;
-        stats.interval_overlap_slots += count > 1u ? 1u : 0u;
-        stats.interval_gap_slots += count == 0u ? 1u : 0u;
-    }
-    return stats;
+std::string Lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
 }
 
-struct WeightLaneStats {
-    std::uint16_t low16_min = std::numeric_limits<std::uint16_t>::max();
-    std::uint16_t low16_max = 0;
-    std::uint16_t high16_min = std::numeric_limits<std::uint16_t>::max();
-    std::uint16_t high16_max = 0;
-    std::array<std::uint8_t, 4> byte_min{255u, 255u, 255u, 255u};
-    std::array<std::uint8_t, 4> byte_max{0u, 0u, 0u, 0u};
-    std::array<std::size_t, 4> byte_within_bones{};
-    std::array<std::size_t, 4> byte_unique{};
-    std::size_t low16_within_points = 0;
-    std::size_t high16_within_points = 0;
-    std::size_t low16_within_bones = 0;
-    std::size_t high16_within_bones = 0;
-    std::size_t low16_unique = 0;
-    std::size_t high16_unique = 0;
-    std::size_t raw_zero = 0;
-    std::uint64_t high16_sum = 0;
-    std::uint64_t point_weight_sum_min = 0;
-    std::uint64_t point_weight_sum_max = 0;
-    std::size_t point_weight_sum_65535 = 0;
-    std::size_t point_weight_sum_65536 = 0;
-    std::size_t point_weight_sum_other = 0;
+struct LayoutMetrics {
+    std::size_t interval_union = 0;
+    std::size_t interval_overlap = 0;
+    std::size_t interval_gaps = 0;
+    std::uint64_t interval_count_sum = 0;
     std::size_t points_with_weights = 0;
     std::size_t max_influences_per_point = 0;
+    std::uint64_t point_weight_sum_min = 0;
+    std::uint64_t point_weight_sum_max = 0;
+    bool confirmed = false;
 };
 
-WeightLaneStats MeasureWeightLanes(const hp2::SkeletalMeshSkinningData& data) {
-    WeightLaneStats stats;
-    std::unordered_set<std::uint16_t> low16_values;
-    std::unordered_set<std::uint16_t> high16_values;
-    std::array<std::unordered_set<std::uint8_t>, 4> byte_values;
-    std::vector<std::uint64_t> point_weight_sums(data.reference_point_count, 0u);
-    std::vector<std::size_t> point_influence_counts(data.reference_point_count, 0u);
-
-    for (const auto& word : data.weight_words) {
-        const std::uint16_t low16 = static_cast<std::uint16_t>(word.raw & 0xffffu);
-        const std::uint16_t high16 = static_cast<std::uint16_t>((word.raw >> 16u) & 0xffffu);
-        stats.low16_min = std::min(stats.low16_min, low16);
-        stats.low16_max = std::max(stats.low16_max, low16);
-        stats.high16_min = std::min(stats.high16_min, high16);
-        stats.high16_max = std::max(stats.high16_max, high16);
-        stats.low16_within_points += low16 < data.reference_point_count ? 1u : 0u;
-        stats.high16_within_points += high16 < data.reference_point_count ? 1u : 0u;
-        stats.low16_within_bones += low16 < data.bones.size() ? 1u : 0u;
-        stats.high16_within_bones += high16 < data.bones.size() ? 1u : 0u;
-        stats.raw_zero += word.raw == 0u ? 1u : 0u;
-        stats.high16_sum += high16;
-        if (low16 < data.reference_point_count) {
-            point_weight_sums[low16] += high16;
-            ++point_influence_counts[low16];
-        }
-        low16_values.insert(low16);
-        high16_values.insert(high16);
-        for (std::size_t lane = 0; lane < 4; ++lane) {
-            const auto byte = static_cast<std::uint8_t>((word.raw >> (lane * 8u)) & 0xffu);
-            stats.byte_min[lane] = std::min(stats.byte_min[lane], byte);
-            stats.byte_max[lane] = std::max(stats.byte_max[lane], byte);
-            stats.byte_within_bones[lane] += byte < data.bones.size() ? 1u : 0u;
-            byte_values[lane].insert(byte);
-        }
-    }
-    if (data.weight_words.empty()) {
-        stats.low16_min = 0;
-        stats.high16_min = 0;
-        stats.byte_min = {0u, 0u, 0u, 0u};
-    }
-    stats.low16_unique = low16_values.size();
-    stats.high16_unique = high16_values.size();
-    for (std::size_t lane = 0; lane < 4; ++lane) {
-        stats.byte_unique[lane] = byte_values[lane].size();
-    }
-
-    bool have_point = false;
-    for (std::size_t index = 0; index < point_weight_sums.size(); ++index) {
-        const std::size_t influences = point_influence_counts[index];
-        if (influences == 0u) {
+LayoutMetrics MeasureLayout(const hp2::SkeletalMeshSkinningData& data) {
+    LayoutMetrics metrics;
+    const std::size_t influence_count = data.weight_words.size();
+    std::vector<std::uint16_t> interval_coverage(influence_count, 0u);
+    for (const auto& record : data.weight_indices) {
+        const std::size_t first = record.first & 0xffffu;
+        const std::size_t count = (record.first >> 16u) & 0xffffu;
+        metrics.interval_count_sum += count;
+        if (first + count > influence_count) {
             continue;
         }
-        const std::uint64_t sum = point_weight_sums[index];
-        ++stats.points_with_weights;
-        stats.max_influences_per_point = std::max(stats.max_influences_per_point, influences);
-        if (!have_point) {
-            stats.point_weight_sum_min = sum;
-            stats.point_weight_sum_max = sum;
-            have_point = true;
-        } else {
-            stats.point_weight_sum_min = std::min(stats.point_weight_sum_min, sum);
-            stats.point_weight_sum_max = std::max(stats.point_weight_sum_max, sum);
+        for (std::size_t slot = first; slot < first + count; ++slot) {
+            ++interval_coverage[slot];
         }
-        stats.point_weight_sum_65535 += sum == 65535u ? 1u : 0u;
-        stats.point_weight_sum_65536 += sum == 65536u ? 1u : 0u;
-        stats.point_weight_sum_other += (sum != 65535u && sum != 65536u) ? 1u : 0u;
     }
-    return stats;
+    for (const auto count : interval_coverage) {
+        metrics.interval_union += count > 0u ? 1u : 0u;
+        metrics.interval_overlap += count > 1u ? 1u : 0u;
+        metrics.interval_gaps += count == 0u ? 1u : 0u;
+    }
+
+    std::vector<std::uint64_t> point_weight_sums(data.reference_point_count, 0u);
+    std::vector<std::size_t> point_influence_counts(data.reference_point_count, 0u);
+    bool all_point_indices_valid = true;
+    for (const auto& word : data.weight_words) {
+        const std::size_t point_index = word.raw & 0xffffu;
+        const std::uint32_t weight = (word.raw >> 16u) & 0xffffu;
+        if (point_index >= data.reference_point_count) {
+            all_point_indices_valid = false;
+            continue;
+        }
+        point_weight_sums[point_index] += weight;
+        ++point_influence_counts[point_index];
+    }
+
+    bool have_weighted_point = false;
+    for (std::size_t point_index = 0; point_index < point_weight_sums.size(); ++point_index) {
+        if (point_influence_counts[point_index] == 0u) {
+            continue;
+        }
+        ++metrics.points_with_weights;
+        metrics.max_influences_per_point = std::max(
+            metrics.max_influences_per_point, point_influence_counts[point_index]
+        );
+        const std::uint64_t sum = point_weight_sums[point_index];
+        if (!have_weighted_point) {
+            metrics.point_weight_sum_min = sum;
+            metrics.point_weight_sum_max = sum;
+            have_weighted_point = true;
+        } else {
+            metrics.point_weight_sum_min = std::min(metrics.point_weight_sum_min, sum);
+            metrics.point_weight_sum_max = std::max(metrics.point_weight_sum_max, sum);
+        }
+    }
+
+    metrics.confirmed = data.weight_indices.size() == data.bones.size()
+        && data.weight_words.size() == data.local_points.size()
+        && data.weight_index_second_max == 0u
+        && metrics.interval_count_sum == influence_count
+        && metrics.interval_union == influence_count
+        && metrics.interval_overlap == 0u
+        && metrics.interval_gaps == 0u
+        && all_point_indices_valid
+        && metrics.points_with_weights == data.reference_point_count
+        && metrics.point_weight_sum_min >= 65530u
+        && metrics.point_weight_sum_max <= 65535u;
+    return metrics;
 }
 
 struct DVec3 {
@@ -276,29 +194,19 @@ DVec3 Rotate(const Quat& q_in, const DVec3& value) {
         u.z * value.x - u.x * value.z,
         u.x * value.y - u.y * value.x,
     };
-    return Add(Add(
-        Scale(u, 2.0 * dot_uv),
-        Scale(value, q.w * q.w - dot_uu)
-    ), Scale(cross, 2.0 * q.w));
+    return Add(Add(Scale(u, 2.0 * dot_uv), Scale(value, q.w * q.w - dot_uu)),
+               Scale(cross, 2.0 * q.w));
 }
 
-Quat BoneQuat(const hp2::SkeletalReferenceBone& bone, bool wxyz, bool conjugate) {
-    Quat value;
-    if (wxyz) {
-        value = {bone.orientation[1], bone.orientation[2], bone.orientation[3], bone.orientation[0]};
-    } else {
-        value = {bone.orientation[0], bone.orientation[1], bone.orientation[2], bone.orientation[3]};
-    }
-    value = Normalize(value);
-    return conjugate ? Conjugate(value) : value;
+Quat ReferenceBoneRotation(const hp2::SkeletalReferenceBone& bone) {
+    return Conjugate(Normalize({
+        bone.orientation[0], bone.orientation[1], bone.orientation[2], bone.orientation[3]
+    }));
 }
 
-bool ResolveHierarchyTransform(
+bool ResolveReferenceTransform(
     const hp2::SkeletalMeshSkinningData& data,
     std::size_t bone_index,
-    bool wxyz,
-    bool conjugate,
-    bool reverse_compose,
     std::vector<Transform>& transforms,
     std::vector<std::uint8_t>& states
 ) {
@@ -313,22 +221,18 @@ bool ResolveHierarchyTransform(
     }
     states[bone_index] = 1u;
     const auto& bone = data.bones[bone_index];
-    const Transform local{BoneQuat(bone, wxyz, conjugate), ToDVec3(bone.position)};
+    const Transform local{ReferenceBoneRotation(bone), ToDVec3(bone.position)};
     const std::int32_t parent = bone.parent_index;
     if (parent < 0 || parent == static_cast<std::int32_t>(bone_index)) {
         transforms[bone_index] = local;
     } else {
         if (parent >= static_cast<std::int32_t>(data.bones.size())
-            || !ResolveHierarchyTransform(
-                data, static_cast<std::size_t>(parent), wxyz, conjugate,
-                reverse_compose, transforms, states
-            )) {
+            || !ResolveReferenceTransform(
+                data, static_cast<std::size_t>(parent), transforms, states)) {
             return false;
         }
         const Transform& parent_transform = transforms[static_cast<std::size_t>(parent)];
-        transforms[bone_index].rotation = reverse_compose
-            ? Multiply(local.rotation, parent_transform.rotation)
-            : Multiply(parent_transform.rotation, local.rotation);
+        transforms[bone_index].rotation = Multiply(parent_transform.rotation, local.rotation);
         transforms[bone_index].position = Add(
             parent_transform.position,
             Rotate(parent_transform.rotation, local.position)
@@ -338,45 +242,26 @@ bool ResolveHierarchyTransform(
     return true;
 }
 
-struct BindCandidate {
-    std::string name;
+struct BindValidation {
     bool valid = false;
-    std::size_t compared_points = 0;
+    std::size_t points = 0;
     double rms_error = 0.0;
     double max_error = 0.0;
 };
 
-BindCandidate EvaluateBindCandidate(
-    const hp2::SkeletalMeshSkinningData& data,
-    const std::string& name,
-    bool hierarchy,
-    bool wxyz,
-    bool conjugate,
-    bool reverse_compose
-) {
-    BindCandidate result;
-    result.name = name;
+BindValidation ValidateReferenceBind(const hp2::SkeletalMeshSkinningData& data) {
+    BindValidation result;
     if (data.bones.empty() || data.reference_points.empty()
-        || data.weight_words.size() != data.local_points.size()
-        || data.weight_indices.size() != data.bones.size()) {
+        || data.weight_indices.size() != data.bones.size()
+        || data.weight_words.size() != data.local_points.size()) {
         return result;
     }
 
     std::vector<Transform> transforms(data.bones.size());
-    if (hierarchy) {
-        std::vector<std::uint8_t> states(data.bones.size(), 0u);
-        for (std::size_t index = 0; index < data.bones.size(); ++index) {
-            if (!ResolveHierarchyTransform(
-                    data, index, wxyz, conjugate, reverse_compose, transforms, states)) {
-                return result;
-            }
-        }
-    } else {
-        for (std::size_t index = 0; index < data.bones.size(); ++index) {
-            transforms[index] = {
-                BoneQuat(data.bones[index], wxyz, conjugate),
-                ToDVec3(data.bones[index].position)
-            };
+    std::vector<std::uint8_t> states(data.bones.size(), 0u);
+    for (std::size_t index = 0; index < data.bones.size(); ++index) {
+        if (!ResolveReferenceTransform(data, index, transforms, states)) {
+            return result;
         }
     }
 
@@ -400,32 +285,31 @@ BindCandidate EvaluateBindCandidate(
     }
 
     std::vector<DVec3> accum(data.reference_points.size());
-    std::vector<std::uint64_t> weight_sums(data.reference_points.size(), 0u);
+    std::vector<std::uint64_t> sums(data.reference_points.size(), 0u);
     for (std::size_t slot = 0; slot < data.weight_words.size(); ++slot) {
         const std::uint32_t packed = data.weight_words[slot].raw;
         const std::size_t point_index = packed & 0xffffu;
         const std::uint32_t weight = (packed >> 16u) & 0xffffu;
         const std::int32_t bone_index = influence_bone[slot];
-        if (point_index >= accum.size() || bone_index < 0
-            || static_cast<std::size_t>(bone_index) >= transforms.size()) {
+        if (point_index >= accum.size() || bone_index < 0) {
             return result;
         }
         const Transform& transform = transforms[static_cast<std::size_t>(bone_index)];
-        const DVec3 local = ToDVec3(data.local_points[slot]);
-        const DVec3 placed = Add(transform.position, Rotate(transform.rotation, local));
-        accum[point_index] = Add(accum[point_index], Scale(placed, static_cast<double>(weight)));
-        weight_sums[point_index] += weight;
+        const DVec3 placed = Add(
+            transform.position,
+            Rotate(transform.rotation, ToDVec3(data.local_points[slot]))
+        );
+        accum[point_index] = Add(accum[point_index], Scale(placed, weight));
+        sums[point_index] += weight;
     }
 
     double squared_sum = 0.0;
     double max_squared = 0.0;
     for (std::size_t point_index = 0; point_index < data.reference_points.size(); ++point_index) {
-        if (weight_sums[point_index] == 0u) {
+        if (sums[point_index] == 0u) {
             continue;
         }
-        const DVec3 predicted = Scale(
-            accum[point_index], 1.0 / static_cast<double>(weight_sums[point_index])
-        );
+        const DVec3 predicted = Scale(accum[point_index], 1.0 / static_cast<double>(sums[point_index]));
         const DVec3 reference = ToDVec3(data.reference_points[point_index]);
         const double dx = predicted.x - reference.x;
         const double dy = predicted.y - reference.y;
@@ -433,46 +317,183 @@ BindCandidate EvaluateBindCandidate(
         const double squared = dx * dx + dy * dy + dz * dz;
         squared_sum += squared;
         max_squared = std::max(max_squared, squared);
-        ++result.compared_points;
+        ++result.points;
     }
-    if (result.compared_points == 0u) {
+    if (result.points == 0u) {
         return result;
     }
-    result.rms_error = std::sqrt(squared_sum / static_cast<double>(result.compared_points));
+    result.rms_error = std::sqrt(squared_sum / static_cast<double>(result.points));
     result.max_error = std::sqrt(max_squared);
     result.valid = std::isfinite(result.rms_error) && std::isfinite(result.max_error);
     return result;
 }
 
-std::vector<BindCandidate> EvaluateBindCandidates(const hp2::SkeletalMeshSkinningData& data) {
-    std::vector<BindCandidate> candidates;
-    const struct Variant {
-        const char* name;
-        bool hierarchy;
-        bool wxyz;
-        bool conjugate;
-        bool reverse;
-    } variants[] = {
-        {"hier_xyzw", true, false, false, false},
-        {"hier_xyzw_conjugate", true, false, true, false},
-        {"hier_wxyz", true, true, false, false},
-        {"hier_wxyz_conjugate", true, true, true, false},
-        {"hier_reverse_xyzw", true, false, false, true},
-        {"hier_reverse_xyzw_conjugate", true, false, true, true},
-        {"hier_reverse_wxyz", true, true, false, true},
-        {"hier_reverse_wxyz_conjugate", true, true, true, true},
-        {"absolute_xyzw", false, false, false, false},
-        {"absolute_xyzw_conjugate", false, false, true, false},
-        {"absolute_wxyz", false, true, false, false},
-        {"absolute_wxyz_conjugate", false, true, true, false},
-    };
-    for (const auto& variant : variants) {
-        candidates.push_back(EvaluateBindCandidate(
-            data, variant.name, variant.hierarchy, variant.wxyz,
-            variant.conjugate, variant.reverse
-        ));
+struct ObjectCandidate {
+    std::string kind;
+    std::string class_name;
+    std::string object_name;
+};
+
+std::vector<ObjectCandidate> FindAnimationCandidates(const hp2::SkeletalMeshSkinningData& data) {
+    std::vector<ObjectCandidate> result;
+    const hp2::PackageIndex package = hp2::LoadPackageIndex(data.package_path);
+    if (!package.valid) {
+        return result;
     }
-    return candidates;
+    auto is_candidate = [](const std::string& class_name, const std::string& object_name) {
+        const std::string class_lower = Lowercase(class_name);
+        const std::string object_lower = Lowercase(object_name);
+        return class_lower.find("anim") != std::string::npos
+            || object_lower.find("anim") != std::string::npos;
+    };
+    for (const auto& entry : package.exports) {
+        if (is_candidate(entry.class_name, entry.object_name)) {
+            result.push_back({"export", entry.class_name, entry.object_name});
+        }
+    }
+    for (const auto& entry : package.imports) {
+        if (is_candidate(entry.class_name, entry.object_name)) {
+            result.push_back({"import", entry.class_name, entry.object_name});
+        }
+    }
+    if (result.size() > 96u) {
+        result.resize(96u);
+    }
+    return result;
+}
+
+std::uint32_t ReadU32(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
+    if (offset + 4u > bytes.size()) {
+        return 0u;
+    }
+    return static_cast<std::uint32_t>(bytes[offset])
+        | (static_cast<std::uint32_t>(bytes[offset + 1u]) << 8u)
+        | (static_cast<std::uint32_t>(bytes[offset + 2u]) << 16u)
+        | (static_cast<std::uint32_t>(bytes[offset + 3u]) << 24u);
+}
+
+bool DecodeCompactExact(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t start,
+    std::size_t length,
+    std::int32_t& value_out
+) {
+    if (length == 0u || length > 5u || start + length > bytes.size()) {
+        return false;
+    }
+    const std::uint8_t first = bytes[start];
+    const bool negative = (first & 0x80u) != 0u;
+    std::uint32_t value = first & 0x3fu;
+    bool more = (first & 0x40u) != 0u;
+    std::uint32_t shift = 6u;
+    std::size_t used = 1u;
+    while (more) {
+        if (used >= length || used >= 5u || shift >= 32u) {
+            return false;
+        }
+        const std::uint8_t byte = bytes[start + used];
+        const std::uint32_t payload = byte & 0x7fu;
+        if (shift == 27u && payload > 0x0fu) {
+            return false;
+        }
+        value |= payload << shift;
+        shift += 7u;
+        more = (byte & 0x80u) != 0u;
+        ++used;
+    }
+    if (used != length || value > static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
+        return false;
+    }
+    const auto signed_value = static_cast<std::int32_t>(value);
+    value_out = negative ? -signed_value : signed_value;
+    return true;
+}
+
+struct TailCandidate {
+    std::size_t compact_bytes = 0;
+    std::int32_t compact_value = 0;
+    std::uint32_t before_u32 = 0;
+    std::uint32_t after_u32 = 0;
+    std::string reference_kind;
+    std::string reference_class;
+    std::string reference_object;
+    std::string name_value;
+};
+
+void ResolveReference(
+    const hp2::PackageIndex& package,
+    std::int32_t reference,
+    TailCandidate& candidate
+) {
+    if (reference == 0) {
+        candidate.reference_kind = "none";
+    } else if (reference > 0) {
+        const std::size_t index = static_cast<std::size_t>(reference - 1);
+        if (index < package.exports.size()) {
+            candidate.reference_kind = "export";
+            candidate.reference_class = package.exports[index].class_name;
+            candidate.reference_object = package.exports[index].object_name;
+        }
+    } else {
+        const std::size_t index = static_cast<std::size_t>(-static_cast<std::int64_t>(reference) - 1);
+        if (index < package.imports.size()) {
+            candidate.reference_kind = "import";
+            candidate.reference_class = package.imports[index].class_name;
+            candidate.reference_object = package.imports[index].object_name;
+        }
+    }
+    if (reference >= 0 && static_cast<std::size_t>(reference) < package.names.size()) {
+        candidate.name_value = package.names[static_cast<std::size_t>(reference)].value;
+    }
+}
+
+std::vector<TailCandidate> InspectPostLocalTail(const hp2::SkeletalMeshSkinningData& data) {
+    std::vector<TailCandidate> result;
+    const hp2::PackageIndex package = hp2::LoadPackageIndex(data.package_path);
+    if (!package.valid) {
+        return result;
+    }
+    const hp2::ExportEntry* mesh_export = nullptr;
+    for (const auto& entry : package.exports) {
+        if (Lowercase(entry.class_name) == "skeletalmesh"
+            && Lowercase(entry.object_name) == Lowercase(data.object_name)) {
+            mesh_export = &entry;
+            break;
+        }
+    }
+    if (mesh_export == nullptr || mesh_export->serial_size <= 0 || mesh_export->serial_offset < 0) {
+        return result;
+    }
+    std::ifstream input(data.package_path, std::ios::binary);
+    if (!input) {
+        return result;
+    }
+    input.seekg(mesh_export->serial_offset, std::ios::beg);
+    std::vector<std::uint8_t> payload(static_cast<std::size_t>(mesh_export->serial_size));
+    input.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
+    if (input.gcount() != static_cast<std::streamsize>(payload.size()) || payload.size() < 57u) {
+        return result;
+    }
+
+    const std::size_t compact_end = payload.size() - 48u - 4u;
+    for (std::size_t length = 1u; length <= 5u; ++length) {
+        if (compact_end < length + 4u) {
+            continue;
+        }
+        const std::size_t compact_start = compact_end - length;
+        std::int32_t value = 0;
+        if (!DecodeCompactExact(payload, compact_start, length, value)) {
+            continue;
+        }
+        TailCandidate candidate;
+        candidate.compact_bytes = length;
+        candidate.compact_value = value;
+        candidate.before_u32 = ReadU32(payload, compact_start - 4u);
+        candidate.after_u32 = ReadU32(payload, compact_end);
+        ResolveReference(package, value, candidate);
+        result.push_back(std::move(candidate));
+    }
+    return result;
 }
 
 }  // namespace
@@ -486,29 +507,23 @@ int main(int argc, char** argv) {
     const hp2::SkeletalMeshSkinningData data = hp2::LoadNamedSkeletalMeshSkinning(
         std::filesystem::path(argv[1]), argv[2], argv[3]
     );
-    const IndexLaneStats index_lanes = MeasureIndexLanes(data);
-    const WeightLaneStats weight_lanes = MeasureWeightLanes(data);
-    const std::vector<BindCandidate> bind_candidates = EvaluateBindCandidates(data);
-    const BindCandidate* best_bind = nullptr;
-    for (const auto& candidate : bind_candidates) {
-        if (candidate.valid && (best_bind == nullptr || candidate.rms_error < best_bind->rms_error)) {
-            best_bind = &candidate;
-        }
-    }
+    const LayoutMetrics layout = MeasureLayout(data);
+    const BindValidation bind = ValidateReferenceBind(data);
+    const auto animation_candidates = FindAnimationCandidates(data);
+    const auto tail_candidates = InspectPostLocalTail(data);
 
-    float min_weight = std::numeric_limits<float>::infinity();
-    float max_weight = -std::numeric_limits<float>::infinity();
+    float min_float = std::numeric_limits<float>::infinity();
+    float max_float = -std::numeric_limits<float>::infinity();
     for (const auto& word : data.weight_words) {
-        if (!word.finite) {
-            continue;
+        if (word.finite) {
+            min_float = std::min(min_float, word.as_float);
+            max_float = std::max(max_float, word.as_float);
         }
-        min_weight = std::min(min_weight, word.as_float);
-        max_weight = std::max(max_weight, word.as_float);
     }
-    const bool have_finite_weight = data.finite_weight_words > 0;
+    const bool have_finite_float = data.finite_weight_words > 0u;
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-skeletal-probe-v4\",\n"
+              << "  \"schema\": \"hp2-skeletal-probe-v5\",\n"
               << "  \"valid\": " << (data.valid ? "true" : "false") << ",\n"
               << "  \"package_name\": \"" << JsonEscape(data.package_name) << "\",\n"
               << "  \"object_name\": \"" << JsonEscape(data.object_name) << "\",\n"
@@ -523,112 +538,62 @@ int main(int argc, char** argv) {
               << "  \"weight_index_records\": " << data.weight_indices.size() << ",\n"
               << "  \"weight_index_first_max\": " << data.weight_index_first_max << ",\n"
               << "  \"weight_index_second_max\": " << data.weight_index_second_max << ",\n"
-              << "  \"weight_index_second_nonzero\": " << index_lanes.second_nonzero << ",\n"
-              << "  \"weight_index_low16_min\": " << index_lanes.low_min << ",\n"
-              << "  \"weight_index_low16_max\": " << index_lanes.low_max << ",\n"
-              << "  \"weight_index_low16_sum\": " << index_lanes.low_sum << ",\n"
-              << "  \"weight_index_low16_unique\": " << index_lanes.low_unique << ",\n"
-              << "  \"weight_index_low16_monotonic\": " << (index_lanes.low_monotonic ? "true" : "false") << ",\n"
-              << "  \"weight_index_high16_min\": " << index_lanes.high_min << ",\n"
-              << "  \"weight_index_high16_max\": " << index_lanes.high_max << ",\n"
-              << "  \"weight_index_high16_sum\": " << index_lanes.high_sum << ",\n"
-              << "  \"weight_index_high16_unique\": " << index_lanes.high_unique << ",\n"
-              << "  \"weight_index_high16_monotonic\": " << (index_lanes.high_monotonic ? "true" : "false") << ",\n"
-              << "  \"weight_index_low16_within_influences\": " << index_lanes.low_within_influences << ",\n"
-              << "  \"weight_index_high16_within_influences\": " << index_lanes.high_within_influences << ",\n"
-              << "  \"weight_index_low_plus_high_max\": " << index_lanes.low_plus_high_max << ",\n"
-              << "  \"weight_index_low_plus_high_within_influences\": " << index_lanes.low_plus_high_within_influences << ",\n"
-              << "  \"weight_index_interval_union_slots\": " << index_lanes.interval_union_slots << ",\n"
-              << "  \"weight_index_interval_overlap_slots\": " << index_lanes.interval_overlap_slots << ",\n"
-              << "  \"weight_index_interval_gap_slots\": " << index_lanes.interval_gap_slots << ",\n"
               << "  \"weight_words\": " << data.weight_words.size() << ",\n"
-              << "  \"weight_word_raw_zero\": " << weight_lanes.raw_zero << ",\n"
-              << "  \"weight_word_low16_min\": " << weight_lanes.low16_min << ",\n"
-              << "  \"weight_word_low16_max\": " << weight_lanes.low16_max << ",\n"
-              << "  \"weight_word_low16_unique\": " << weight_lanes.low16_unique << ",\n"
-              << "  \"weight_word_low16_within_points\": " << weight_lanes.low16_within_points << ",\n"
-              << "  \"weight_word_low16_within_bones\": " << weight_lanes.low16_within_bones << ",\n"
-              << "  \"weight_word_high16_min\": " << weight_lanes.high16_min << ",\n"
-              << "  \"weight_word_high16_max\": " << weight_lanes.high16_max << ",\n"
-              << "  \"weight_word_high16_unique\": " << weight_lanes.high16_unique << ",\n"
-              << "  \"weight_word_high16_within_points\": " << weight_lanes.high16_within_points << ",\n"
-              << "  \"weight_word_high16_within_bones\": " << weight_lanes.high16_within_bones << ",\n"
-              << "  \"weight_word_high16_sum\": " << weight_lanes.high16_sum << ",\n"
-              << "  \"weight_word_byte_min\": ["
-              << static_cast<unsigned>(weight_lanes.byte_min[0]) << ", "
-              << static_cast<unsigned>(weight_lanes.byte_min[1]) << ", "
-              << static_cast<unsigned>(weight_lanes.byte_min[2]) << ", "
-              << static_cast<unsigned>(weight_lanes.byte_min[3]) << "],\n"
-              << "  \"weight_word_byte_max\": ["
-              << static_cast<unsigned>(weight_lanes.byte_max[0]) << ", "
-              << static_cast<unsigned>(weight_lanes.byte_max[1]) << ", "
-              << static_cast<unsigned>(weight_lanes.byte_max[2]) << ", "
-              << static_cast<unsigned>(weight_lanes.byte_max[3]) << "],\n"
-              << "  \"weight_word_byte_unique\": ["
-              << weight_lanes.byte_unique[0] << ", " << weight_lanes.byte_unique[1] << ", "
-              << weight_lanes.byte_unique[2] << ", " << weight_lanes.byte_unique[3] << "],\n"
-              << "  \"weight_word_byte_within_bones\": ["
-              << weight_lanes.byte_within_bones[0] << ", " << weight_lanes.byte_within_bones[1] << ", "
-              << weight_lanes.byte_within_bones[2] << ", " << weight_lanes.byte_within_bones[3] << "],\n"
-              << "  \"points_with_weight_records\": " << weight_lanes.points_with_weights << ",\n"
-              << "  \"max_influences_per_point\": " << weight_lanes.max_influences_per_point << ",\n"
-              << "  \"point_weight_sum_min\": " << weight_lanes.point_weight_sum_min << ",\n"
-              << "  \"point_weight_sum_max\": " << weight_lanes.point_weight_sum_max << ",\n"
-              << "  \"point_weight_sum_65535\": " << weight_lanes.point_weight_sum_65535 << ",\n"
-              << "  \"point_weight_sum_65536\": " << weight_lanes.point_weight_sum_65536 << ",\n"
-              << "  \"point_weight_sum_other\": " << weight_lanes.point_weight_sum_other << ",\n"
-              << "  \"bind_candidate_count\": " << bind_candidates.size() << ",\n"
-              << "  \"best_bind_candidate\": ";
-    if (best_bind != nullptr) {
-        std::cout << "\"" << JsonEscape(best_bind->name) << "\",\n"
-                  << "  \"best_bind_rms_error\": " << best_bind->rms_error << ",\n"
-                  << "  \"best_bind_max_error\": " << best_bind->max_error << ",\n"
-                  << "  \"best_bind_points\": " << best_bind->compared_points << ",\n";
-    } else {
-        std::cout << "null,\n"
-                  << "  \"best_bind_rms_error\": null,\n"
-                  << "  \"best_bind_max_error\": null,\n"
-                  << "  \"best_bind_points\": 0,\n";
-    }
-    std::cout << "  \"bind_candidates\": [\n";
-    for (std::size_t index = 0; index < bind_candidates.size(); ++index) {
-        const auto& candidate = bind_candidates[index];
-        std::cout << "    {\"name\": \"" << JsonEscape(candidate.name)
-                  << "\", \"valid\": " << (candidate.valid ? "true" : "false")
-                  << ", \"points\": " << candidate.compared_points
-                  << ", \"rms_error\": ";
-        if (candidate.valid) {
-            std::cout << candidate.rms_error;
-        } else {
-            std::cout << "null";
-        }
-        std::cout << ", \"max_error\": ";
-        if (candidate.valid) {
-            std::cout << candidate.max_error;
-        } else {
-            std::cout << "null";
-        }
-        std::cout << "}" << (index + 1 == bind_candidates.size() ? "" : ",") << '\n';
-    }
-    std::cout << "  ],\n"
+              << "  \"local_points\": " << data.local_points.size() << ",\n"
+              << "  \"layout_confirmed\": " << (layout.confirmed ? "true" : "false") << ",\n"
+              << "  \"influence_count_sum\": " << layout.interval_count_sum << ",\n"
+              << "  \"influence_interval_union\": " << layout.interval_union << ",\n"
+              << "  \"influence_interval_overlap\": " << layout.interval_overlap << ",\n"
+              << "  \"influence_interval_gaps\": " << layout.interval_gaps << ",\n"
+              << "  \"points_with_weights\": " << layout.points_with_weights << ",\n"
+              << "  \"max_influences_per_point\": " << layout.max_influences_per_point << ",\n"
+              << "  \"point_weight_sum_min\": " << layout.point_weight_sum_min << ",\n"
+              << "  \"point_weight_sum_max\": " << layout.point_weight_sum_max << ",\n"
+              << "  \"bind_valid\": " << (bind.valid ? "true" : "false") << ",\n"
+              << "  \"bind_rule\": \"hierarchy_parent_times_local_xyzw_conjugate\",\n"
+              << "  \"bind_points\": " << bind.points << ",\n"
+              << "  \"bind_rms_error\": " << bind.rms_error << ",\n"
+              << "  \"bind_max_error\": " << bind.max_error << ",\n"
               << "  \"finite_weight_words\": " << data.finite_weight_words << ",\n"
               << "  \"unit_interval_weight_words\": " << data.unit_interval_weight_words << ",\n"
               << "  \"nonfinite_weight_words\": " << data.nonfinite_weight_words << ",\n"
               << "  \"finite_weight_min\": ";
-    if (have_finite_weight) {
-        std::cout << min_weight;
+    if (have_finite_float) {
+        std::cout << min_float;
     } else {
         std::cout << "null";
     }
     std::cout << ",\n  \"finite_weight_max\": ";
-    if (have_finite_weight) {
-        std::cout << max_weight;
+    if (have_finite_float) {
+        std::cout << max_float;
     } else {
         std::cout << "null";
     }
     std::cout << ",\n"
-              << "  \"local_points\": " << data.local_points.size() << ",\n"
               << "  \"remaining_bytes\": " << data.remaining_bytes << ",\n"
+              << "  \"animation_object_candidates\": [\n";
+    for (std::size_t index = 0; index < animation_candidates.size(); ++index) {
+        const auto& candidate = animation_candidates[index];
+        std::cout << "    {\"kind\": \"" << JsonEscape(candidate.kind)
+                  << "\", \"class\": \"" << JsonEscape(candidate.class_name)
+                  << "\", \"object\": \"" << JsonEscape(candidate.object_name) << "\"}"
+                  << (index + 1u == animation_candidates.size() ? "" : ",") << '\n';
+    }
+    std::cout << "  ],\n"
+              << "  \"post_local_tail_candidates\": [\n";
+    for (std::size_t index = 0; index < tail_candidates.size(); ++index) {
+        const auto& candidate = tail_candidates[index];
+        std::cout << "    {\"compact_bytes\": " << candidate.compact_bytes
+                  << ", \"value\": " << candidate.compact_value
+                  << ", \"before_u32\": " << candidate.before_u32
+                  << ", \"after_u32\": " << candidate.after_u32
+                  << ", \"reference_kind\": \"" << JsonEscape(candidate.reference_kind)
+                  << "\", \"reference_class\": \"" << JsonEscape(candidate.reference_class)
+                  << "\", \"reference_object\": \"" << JsonEscape(candidate.reference_object)
+                  << "\", \"name_value\": \"" << JsonEscape(candidate.name_value) << "\"}"
+                  << (index + 1u == tail_candidates.size() ? "" : ",") << '\n';
+    }
+    std::cout << "  ],\n"
               << "  \"sequences\": [\n";
     for (std::size_t index = 0; index < data.sequences.size(); ++index) {
         const auto& sequence = data.sequences[index];
@@ -638,7 +603,7 @@ int main(int argc, char** argv) {
                   << ", \"frame_count\": " << sequence.frame_count
                   << ", \"notify_count\": " << sequence.notify_count
                   << ", \"rate\": " << sequence.rate << "}"
-                  << (index + 1 == data.sequences.size() ? "" : ",") << '\n';
+                  << (index + 1u == data.sequences.size() ? "" : ",") << '\n';
     }
     std::cout << "  ]";
     if (!data.error.empty()) {
