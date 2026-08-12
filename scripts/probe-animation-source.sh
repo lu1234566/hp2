@@ -79,7 +79,7 @@ if [[ -z "$hpmodels_path" ]]; then
     exit 65
 fi
 
-echo "Building bounded animation probe..."
+echo "Building bounded animation probes..."
 build_dir="$probe_root/build"
 mkdir -p "$build_dir"
 common_sources=(
@@ -92,37 +92,44 @@ common_sources=(
     src/portcore/ue_skeletal.cpp
     src/portcore/ue_texture.cpp
 )
-g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc/portcore/include \
-    "${common_sources[@]}" tools/hp2_animation_probe.cpp \
+common_flags=(-std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc/portcore/include)
+
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_probe.cpp \
     -o "$build_dir/hp2_animation_probe" >"$report_root/build.log" 2>&1
+g++ "${common_flags[@]}" "${common_sources[@]}" tools/hp2_animation_layout_probe.cpp \
+    -o "$build_dir/hp2_animation_layout_probe" >>"$report_root/build.log" 2>&1
 
 "$build_dir/hp2_animation_probe" "$probe_root" HPModels skGenMaleAnims \
     >"$report_root/animation-skGenMaleAnims.json"
+"$build_dir/hp2_animation_layout_probe" "$probe_root" HPModels skGenMaleAnims \
+    >"$report_root/animation-layout-candidates.json"
 
-python3 - "$report_root/animation-skGenMaleAnims.json" "$report_root/summary.json" "$cab_count" <<'PY'
+python3 - "$report_root/animation-skGenMaleAnims.json" \
+    "$report_root/animation-layout-candidates.json" \
+    "$report_root/summary.json" "$cab_count" <<'PY'
 import json
 import pathlib
 import sys
-source = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+animation = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+layouts = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v2",
-    "installshield_cab_sets": int(sys.argv[3]),
-    "package": source.get("package"),
-    "object": source.get("object"),
-    "class": source.get("class"),
-    "version": source.get("version"),
-    "serial_size": source.get("serial_size"),
-    "native_offset": source.get("native_offset"),
-    "native_bytes": source.get("native_bytes"),
-    "property_count": source.get("property_count"),
-    "first_compact_valid": source.get("first_compact_valid"),
-    "first_compact_value": source.get("first_compact_value"),
-    "first_compact_bytes": source.get("first_compact_bytes"),
-    "properties": source.get("properties", []),
-    "compact_candidates": source.get("compact_candidates", []),
-    "relevant_names": source.get("relevant_names", []),
+    "schema": "hp2-animation-source-summary-v3",
+    "installshield_cab_sets": int(sys.argv[4]),
+    "package": animation.get("package"),
+    "object": animation.get("object"),
+    "class": animation.get("class"),
+    "version": animation.get("version"),
+    "native_bytes": animation.get("native_bytes"),
+    "bone_table_valid": animation.get("bone_table_valid"),
+    "bone_channel_count": animation.get("bone_channel_count"),
+    "mesh_name_matches": animation.get("mesh_name_matches"),
+    "mesh_parent_matches": animation.get("mesh_parent_matches"),
+    "motion_count": animation.get("motion_count"),
+    "baseline_motion_valid": animation.get("motions_valid"),
+    "baseline_motion_error_stage": animation.get("motion_error_stage"),
+    "layout_candidates": layouts.get("layouts", []),
 }
-pathlib.Path(sys.argv[2]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+pathlib.Path(sys.argv[3]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 PY
 
 echo "Animation metadata probe complete. Original media remains only in the temporary runner directory."
