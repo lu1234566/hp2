@@ -96,57 +96,116 @@ std::uint32_t ReadU32(const std::vector<std::uint8_t>& bytes, std::size_t offset
         | (static_cast<std::uint32_t>(bytes[offset + 3u]) << 24u);
 }
 
+struct BoneChannelTable {
+    bool valid = false;
+    std::int32_t count = 0;
+    std::size_t start_offset = 0;
+    std::size_t end_offset = 0;
+    std::size_t valid_name_count = 0;
+    std::size_t metadata_a_nonzero = 0;
+    std::size_t metadata_b_nonzero = 0;
+    std::uint32_t metadata_a_max = 0;
+    std::uint32_t metadata_b_max = 0;
+    std::vector<std::string> first_names;
+    std::vector<std::string> last_names;
+};
+
+BoneChannelTable ParseBoneChannelTable(
+    const hp2::PackageIndex& package,
+    const std::vector<std::uint8_t>& native
+) {
+    BoneChannelTable result;
+    std::size_t position = 0;
+    std::size_t used = 0;
+    if (!DecodeCompact(native, position, result.count, used)
+        || result.count < 0 || result.count > 4096) {
+        return result;
+    }
+    position += used;
+    result.start_offset = position;
+    std::vector<std::string> all_names;
+    all_names.reserve(static_cast<std::size_t>(result.count));
+    for (std::int32_t index = 0; index < result.count; ++index) {
+        std::int32_t name_index = 0;
+        if (!DecodeCompact(native, position, name_index, used)) {
+            return result;
+        }
+        position += used;
+        if (position + 8u > native.size()) {
+            return result;
+        }
+        std::string name;
+        if (name_index >= 0 && static_cast<std::size_t>(name_index) < package.names.size()) {
+            name = package.names[static_cast<std::size_t>(name_index)].value;
+            ++result.valid_name_count;
+        }
+        all_names.push_back(name);
+        const std::uint32_t metadata_a = ReadU32(native, position);
+        const std::uint32_t metadata_b = ReadU32(native, position + 4u);
+        result.metadata_a_nonzero += metadata_a != 0u ? 1u : 0u;
+        result.metadata_b_nonzero += metadata_b != 0u ? 1u : 0u;
+        result.metadata_a_max = std::max(result.metadata_a_max, metadata_a);
+        result.metadata_b_max = std::max(result.metadata_b_max, metadata_b);
+        position += 8u;
+    }
+    result.end_offset = position;
+    const std::size_t sample = std::min<std::size_t>(12u, all_names.size());
+    result.first_names.assign(all_names.begin(), all_names.begin() + static_cast<std::ptrdiff_t>(sample));
+    if (all_names.size() > sample) {
+        result.last_names.assign(
+            all_names.end() - static_cast<std::ptrdiff_t>(sample), all_names.end()
+        );
+    } else {
+        result.last_names = result.first_names;
+    }
+    result.valid = result.valid_name_count == static_cast<std::size_t>(result.count);
+    return result;
+}
+
 struct CompactCandidate {
-    std::size_t offset = 0;
+    std::size_t relative_offset = 0;
+    std::size_t absolute_offset = 0;
     std::size_t bytes = 0;
     std::int32_t value = 0;
     std::string name;
-    bool export_ref = false;
-    bool import_ref = false;
-    std::string ref_class;
-    std::string ref_object;
 };
 
-std::vector<CompactCandidate> ScanCompactCandidates(
+std::vector<CompactCandidate> ScanAfterOffset(
     const hp2::PackageIndex& package,
     const std::vector<std::uint8_t>& native,
-    std::size_t max_bytes
+    std::size_t start,
+    std::size_t byte_count
 ) {
     std::vector<CompactCandidate> result;
-    const std::size_t limit = std::min(max_bytes, native.size());
-    for (std::size_t offset = 0; offset < limit; ++offset) {
+    if (start >= native.size()) return result;
+    const std::size_t end = std::min(native.size(), start + byte_count);
+    for (std::size_t offset = start; offset < end; ++offset) {
         std::int32_t value = 0;
         std::size_t used = 0;
         if (!DecodeCompact(native, offset, value, used)) continue;
         CompactCandidate candidate;
-        candidate.offset = offset;
+        candidate.relative_offset = offset - start;
+        candidate.absolute_offset = offset;
         candidate.bytes = used;
         candidate.value = value;
         if (value >= 0 && static_cast<std::size_t>(value) < package.names.size()) {
             candidate.name = package.names[static_cast<std::size_t>(value)].value;
         }
-        if (value > 0) {
-            const std::size_t index = static_cast<std::size_t>(value - 1);
-            if (index < package.exports.size()) {
-                candidate.export_ref = true;
-                candidate.ref_class = package.exports[index].class_name;
-                candidate.ref_object = package.exports[index].object_name;
-            }
-        } else if (value < 0) {
-            const std::size_t index = static_cast<std::size_t>(-static_cast<std::int64_t>(value) - 1);
-            if (index < package.imports.size()) {
-                candidate.import_ref = true;
-                candidate.ref_class = package.imports[index].class_name;
-                candidate.ref_object = package.imports[index].object_name;
-            }
-        }
-        if (std::abs(static_cast<std::int64_t>(value)) <= 100000
-            || !candidate.name.empty() || candidate.export_ref || candidate.import_ref) {
+        if (std::abs(static_cast<std::int64_t>(value)) <= 100000 || !candidate.name.empty()) {
             result.push_back(std::move(candidate));
         }
     }
-    if (result.size() > 128u) result.resize(128u);
+    if (result.size() > 96u) result.resize(96u);
     return result;
+}
+
+void PrintStringArray(const std::vector<std::string>& values) {
+    std::cout << '[';
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0u) std::cout << ", ";
+        std::cout << '"' << JsonEscape(values[index]) << '"';
+    }
+    std::cout << ']';
 }
 
 }  // namespace
@@ -201,30 +260,23 @@ int main(int argc, char** argv) {
         std::cerr << "Native offset is outside Animation payload\n";
         return 2;
     }
-    std::vector<std::uint8_t> native(
+    const std::vector<std::uint8_t> native(
         payload.begin() + static_cast<std::ptrdiff_t>(properties.native_data_offset), payload.end()
     );
 
-    std::int32_t first_compact = 0;
-    std::size_t first_compact_bytes = 0;
-    const bool first_compact_valid = DecodeCompact(native, 0u, first_compact, first_compact_bytes);
-    const auto candidates = ScanCompactCandidates(package, native, 192u);
-
-    std::vector<std::string> relevant_names;
-    for (const auto& name : package.names) {
-        const std::string lower = Lowercase(name.value);
-        if (lower.find("anim") != std::string::npos
-            || lower.find("bone") != std::string::npos
-            || lower.find("track") != std::string::npos
-            || lower.find("key") != std::string::npos
-            || lower.find("move") != std::string::npos) {
-            relevant_names.push_back(name.value);
-        }
-    }
-    if (relevant_names.size() > 128u) relevant_names.resize(128u);
+    const BoneChannelTable bone_table = ParseBoneChannelTable(package, native);
+    std::int32_t after_bones_compact = 0;
+    std::size_t after_bones_compact_bytes = 0;
+    const bool after_bones_compact_valid = bone_table.valid
+        && DecodeCompact(
+            native, bone_table.end_offset, after_bones_compact, after_bones_compact_bytes
+        );
+    const auto after_bones_candidates = ScanAfterOffset(
+        package, native, bone_table.end_offset, 256u
+    );
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-animation-probe-v1\",\n"
+              << "  \"schema\": \"hp2-animation-probe-v2\",\n"
               << "  \"package\": \"" << JsonEscape(package.summary.path.stem().string()) << "\",\n"
               << "  \"object\": \"" << JsonEscape(entry.object_name) << "\",\n"
               << "  \"class\": \"" << JsonEscape(entry.class_name) << "\",\n"
@@ -233,38 +285,39 @@ int main(int argc, char** argv) {
               << "  \"native_offset\": " << properties.native_data_offset << ",\n"
               << "  \"native_bytes\": " << native.size() << ",\n"
               << "  \"property_count\": " << properties.properties.size() << ",\n"
-              << "  \"first_compact_valid\": " << (first_compact_valid ? "true" : "false") << ",\n"
-              << "  \"first_compact_value\": " << (first_compact_valid ? first_compact : 0) << ",\n"
-              << "  \"first_compact_bytes\": " << (first_compact_valid ? first_compact_bytes : 0) << ",\n"
-              << "  \"native_first_u32\": " << ReadU32(native, 0u) << ",\n"
-              << "  \"properties\": [\n";
-    for (std::size_t index = 0; index < properties.properties.size(); ++index) {
-        const auto& property = properties.properties[index];
-        std::cout << "    {\"name\": \"" << JsonEscape(property.name)
-                  << "\", \"struct\": \"" << JsonEscape(property.struct_name)
-                  << "\", \"type\": " << static_cast<unsigned>(property.type)
-                  << ", \"array_index\": " << property.array_index
-                  << ", \"bytes\": " << property.bytes.size() << "}"
-                  << (index + 1u == properties.properties.size() ? "" : ",") << '\n';
-    }
-    std::cout << "  ],\n"
-              << "  \"compact_candidates\": [\n";
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        const auto& candidate = candidates[index];
-        std::cout << "    {\"offset\": " << candidate.offset
+              << "  \"bone_table_valid\": " << (bone_table.valid ? "true" : "false") << ",\n"
+              << "  \"bone_channel_count\": " << bone_table.count << ",\n"
+              << "  \"bone_table_start_offset\": " << bone_table.start_offset << ",\n"
+              << "  \"bone_table_end_offset\": " << bone_table.end_offset << ",\n"
+              << "  \"bone_valid_names\": " << bone_table.valid_name_count << ",\n"
+              << "  \"bone_metadata_a_nonzero\": " << bone_table.metadata_a_nonzero << ",\n"
+              << "  \"bone_metadata_b_nonzero\": " << bone_table.metadata_b_nonzero << ",\n"
+              << "  \"bone_metadata_a_max\": " << bone_table.metadata_a_max << ",\n"
+              << "  \"bone_metadata_b_max\": " << bone_table.metadata_b_max << ",\n"
+              << "  \"bone_first_names\": ";
+    PrintStringArray(bone_table.first_names);
+    std::cout << ",\n  \"bone_last_names\": ";
+    PrintStringArray(bone_table.last_names);
+    std::cout << ",\n"
+              << "  \"after_bones_compact_valid\": "
+              << (after_bones_compact_valid ? "true" : "false") << ",\n"
+              << "  \"after_bones_compact_value\": "
+              << (after_bones_compact_valid ? after_bones_compact : 0) << ",\n"
+              << "  \"after_bones_compact_bytes\": "
+              << (after_bones_compact_valid ? after_bones_compact_bytes : 0) << ",\n"
+              << "  \"bytes_after_bone_table\": "
+              << (bone_table.end_offset <= native.size() ? native.size() - bone_table.end_offset : 0u)
+              << ",\n"
+              << "  \"after_bones_candidates\": [\n";
+    for (std::size_t index = 0; index < after_bones_candidates.size(); ++index) {
+        const auto& candidate = after_bones_candidates[index];
+        std::cout << "    {\"relative_offset\": " << candidate.relative_offset
+                  << ", \"absolute_offset\": " << candidate.absolute_offset
                   << ", \"bytes\": " << candidate.bytes
                   << ", \"value\": " << candidate.value
-                  << ", \"name\": \"" << JsonEscape(candidate.name)
-                  << "\", \"ref_class\": \"" << JsonEscape(candidate.ref_class)
-                  << "\", \"ref_object\": \"" << JsonEscape(candidate.ref_object) << "\"}"
-                  << (index + 1u == candidates.size() ? "" : ",") << '\n';
+                  << ", \"name\": \"" << JsonEscape(candidate.name) << "\"}"
+                  << (index + 1u == after_bones_candidates.size() ? "" : ",") << '\n';
     }
-    std::cout << "  ],\n"
-              << "  \"relevant_names\": [";
-    for (std::size_t index = 0; index < relevant_names.size(); ++index) {
-        if (index != 0u) std::cout << ", ";
-        std::cout << "\"" << JsonEscape(relevant_names[index]) << "\"";
-    }
-    std::cout << "]\n}\n";
-    return 0;
+    std::cout << "  ]\n}\n";
+    return bone_table.valid ? 0 : 2;
 }
