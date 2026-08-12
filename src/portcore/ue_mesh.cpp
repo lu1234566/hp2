@@ -1030,16 +1030,32 @@ ActorMeshScene LoadDirectActorMeshes(
             continue;
         }
         if (inserted_mesh) {
-            result.assets.push_back({
-                mesh.package_name,
-                mesh.object_name,
-                mesh.class_name,
-                mesh.vertices.size(),
-                mesh.triangles.size(),
-                mesh.texture_references.size(),
-                mesh.skeletal_points,
-                mesh.skeletal_bones
-            });
+            ActorMeshAssetSummary asset;
+            asset.package_name = mesh.package_name;
+            asset.object_name = mesh.object_name;
+            asset.class_name = mesh.class_name;
+            asset.vertices = mesh.vertices.size();
+            asset.triangles = mesh.triangles.size();
+            asset.texture_slots = mesh.texture_references.size();
+            asset.skeletal_points = mesh.skeletal_points;
+            asset.skeletal_bones = mesh.skeletal_bones;
+            asset.mesh_scale = mesh.scale;
+            asset.mesh_origin = mesh.origin;
+            for (const Vec3& vertex : mesh.vertices) {
+                if (!asset.vertex_bounds_valid) {
+                    asset.vertex_bounds_min = vertex;
+                    asset.vertex_bounds_max = vertex;
+                    asset.vertex_bounds_valid = true;
+                } else {
+                    asset.vertex_bounds_min.x = std::min(asset.vertex_bounds_min.x, vertex.x);
+                    asset.vertex_bounds_min.y = std::min(asset.vertex_bounds_min.y, vertex.y);
+                    asset.vertex_bounds_min.z = std::min(asset.vertex_bounds_min.z, vertex.z);
+                    asset.vertex_bounds_max.x = std::max(asset.vertex_bounds_max.x, vertex.x);
+                    asset.vertex_bounds_max.y = std::max(asset.vertex_bounds_max.y, vertex.y);
+                    asset.vertex_bounds_max.z = std::max(asset.vertex_bounds_max.z, vertex.z);
+                }
+            }
+            result.assets.push_back(std::move(asset));
             result.decoded_mesh_assets = result.assets.size();
         }
 
@@ -1054,6 +1070,21 @@ ActorMeshScene LoadDirectActorMeshes(
 
         ++result.decoded_mesh_instances;
         result.decoded_inherited_mesh_instances += inherited_mesh ? 1u : 0u;
+        ActorMeshInstanceSummary instance;
+        instance.actor_object_name = actor.object_name;
+        instance.actor_class_name = actor.class_name;
+        instance.mesh_package_name = mesh.package_name;
+        instance.mesh_object_name = mesh.object_name;
+        instance.inherited_mesh = inherited_mesh;
+        instance.has_location = effective_actor.has_location;
+        instance.location = effective_actor.location;
+        instance.has_pre_pivot = effective_actor.has_pre_pivot;
+        instance.pre_pivot = effective_actor.pre_pivot;
+        instance.has_draw_scale = effective_actor.has_draw_scale;
+        instance.draw_scale = effective_actor.draw_scale;
+        instance.has_draw_scale_3d = effective_actor.has_draw_scale_3d;
+        instance.draw_scale_3d = effective_actor.draw_scale_3d;
+        instance.source_triangles = mesh.triangles.size();
         for (const VertexMeshTriangle& triangle : mesh.triangles) {
             if (result.triangles.size() >= max_triangles) {
                 break;
@@ -1065,6 +1096,18 @@ ActorMeshScene LoadDirectActorMeshes(
                 );
                 placed.texture_coordinates[corner] = triangle.texture_coordinates[corner];
                 const Vec3& point = placed.points[corner];
+                if (!instance.bounds_valid) {
+                    instance.bounds_min = point;
+                    instance.bounds_max = point;
+                    instance.bounds_valid = true;
+                } else {
+                    instance.bounds_min.x = std::min(instance.bounds_min.x, point.x);
+                    instance.bounds_min.y = std::min(instance.bounds_min.y, point.y);
+                    instance.bounds_min.z = std::min(instance.bounds_min.z, point.z);
+                    instance.bounds_max.x = std::max(instance.bounds_max.x, point.x);
+                    instance.bounds_max.y = std::max(instance.bounds_max.y, point.y);
+                    instance.bounds_max.z = std::max(instance.bounds_max.z, point.z);
+                }
                 if (!result.bounds_valid) {
                     result.bounds_min = point;
                     result.bounds_max = point;
@@ -1084,7 +1127,9 @@ ActorMeshScene LoadDirectActorMeshes(
             }
             result.textured_triangles += placed.material_index >= 0 ? 1u : 0u;
             result.triangles.push_back(placed);
+            ++instance.emitted_triangles;
         }
+        result.instances.push_back(std::move(instance));
     }
     result.source_triangles = result.triangles.size();
     result.valid = !result.triangles.empty();

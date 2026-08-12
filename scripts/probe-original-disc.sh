@@ -126,7 +126,7 @@ scene = g2.get("g4_scene", {})
 actors = g2.get("g5_actor_census", {})
 mesh_scene = g2.get("g5_mesh_scene", g2.get("g5_direct_mesh_scene", {}))
 summary = {
-    "schema": "hp2-original-disc-probe-v8",
+    "schema": "hp2-original-disc-probe-v9",
     "mdf_bytes": int(sys.argv[4]),
     "mdf_sha256": sys.argv[5],
     "installshield_cab_sets": int(sys.argv[6]),
@@ -211,6 +211,7 @@ summary = {
     "g5_actor_bounds_min": mesh_scene.get("bounds_min"),
     "g5_actor_bounds_max": mesh_scene.get("bounds_max"),
     "g5_mesh_assets": mesh_scene.get("assets", []),
+    "g5_mesh_instances": mesh_scene.get("instances", []),
     "g5_mesh_error": mesh_scene.get("error"),
 }
 summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

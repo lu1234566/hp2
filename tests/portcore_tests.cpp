@@ -778,12 +778,17 @@ int main() {
                      && actor_mesh_scene.decoded_mesh_instances == 1
                      && actor_mesh_scene.decoded_inherited_mesh_instances == 1
                      && actor_mesh_scene.source_triangles == 1
+                     && actor_mesh_scene.instances.size() == 1
+                     && actor_mesh_scene.instances[0].inherited_mesh
+                     && actor_mesh_scene.instances[0].emitted_triangles == 1
+                     && actor_mesh_scene.instances[0].bounds_valid
                      && actor_mesh_scene.triangles.size() == 1
                      && actor_mesh_scene.bounds_valid
                      && actor_mesh_scene.bounds_max.x > actor_mesh_scene.bounds_min.x,
                  "inherited class Mesh references should resolve and receive the actor transform");
     ok &= Expect(std::isfinite(actor_mesh_scene.triangles[0].points[0].x)
-                     && actor_mesh_scene.assets[0].object_name == "ChairMesh",
+                     && actor_mesh_scene.assets[0].object_name == "ChairMesh"
+                     && actor_mesh_scene.assets[0].vertex_bounds_valid,
                  "placed actor triangles and mesh asset summaries should remain bounded");
 
     hp2::Runtime runtime;

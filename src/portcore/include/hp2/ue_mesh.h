@@ -57,6 +57,32 @@ struct ActorMeshAssetSummary {
     std::size_t texture_slots = 0;
     std::size_t skeletal_points = 0;
     std::size_t skeletal_bones = 0;
+    bool vertex_bounds_valid = false;
+    Vec3 vertex_bounds_min;
+    Vec3 vertex_bounds_max;
+    Vec3 mesh_scale{1.0f, 1.0f, 1.0f};
+    Vec3 mesh_origin;
+};
+
+struct ActorMeshInstanceSummary {
+    std::string actor_object_name;
+    std::string actor_class_name;
+    std::string mesh_package_name;
+    std::string mesh_object_name;
+    bool inherited_mesh = false;
+    bool has_location = false;
+    Vec3 location;
+    bool has_pre_pivot = false;
+    Vec3 pre_pivot;
+    bool has_draw_scale = false;
+    float draw_scale = 1.0f;
+    bool has_draw_scale_3d = false;
+    Vec3 draw_scale_3d{1.0f, 1.0f, 1.0f};
+    std::size_t source_triangles = 0;
+    std::size_t emitted_triangles = 0;
+    bool bounds_valid = false;
+    Vec3 bounds_min;
+    Vec3 bounds_max;
 };
 
 struct ActorMeshScene {
@@ -80,6 +106,7 @@ struct ActorMeshScene {
     Vec3 bounds_min;
     Vec3 bounds_max;
     std::vector<ActorMeshAssetSummary> assets;
+    std::vector<ActorMeshInstanceSummary> instances;
     std::vector<ActorMeshMaterial> materials;
     std::vector<ActorMeshTriangle> triangles;
     std::string error;

@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "{\n"
-              << "  \"schema\": \"hp2-map-index-v5\",\n"
+              << "  \"schema\": \"hp2-map-index-v6\",\n"
               << "  \"path\": \"" << JsonEscape(map_path.generic_string()) << "\",\n"
               << "  \"version\": " << package.summary.file_version << ",\n"
               << "  \"licensee_version\": " << package.summary.licensee_version << ",\n"
@@ -301,8 +301,44 @@ int main(int argc, char** argv) {
                   << ", \"triangles\": " << asset.triangles
                   << ", \"texture_slots\": " << asset.texture_slots
                   << ", \"skeletal_points\": " << asset.skeletal_points
-                  << ", \"skeletal_bones\": " << asset.skeletal_bones << "}"
+                  << ", \"skeletal_bones\": " << asset.skeletal_bones
+                  << ", \"vertex_bounds_min\": [" << asset.vertex_bounds_min.x << ", "
+                  << asset.vertex_bounds_min.y << ", " << asset.vertex_bounds_min.z << "]"
+                  << ", \"vertex_bounds_max\": [" << asset.vertex_bounds_max.x << ", "
+                  << asset.vertex_bounds_max.y << ", " << asset.vertex_bounds_max.z << "]"
+                  << ", \"mesh_scale\": [" << asset.mesh_scale.x << ", "
+                  << asset.mesh_scale.y << ", " << asset.mesh_scale.z << "]"
+                  << ", \"mesh_origin\": [" << asset.mesh_origin.x << ", "
+                  << asset.mesh_origin.y << ", " << asset.mesh_origin.z << "]}"
                   << (index + 1 == actor_meshes.assets.size() ? "" : ",") << '\n';
+    }
+    std::cout << "    ],\n    \"instances\": [\n";
+    for (std::size_t index = 0; index < actor_meshes.instances.size(); ++index) {
+        const auto& instance = actor_meshes.instances[index];
+        std::cout << "      {\"actor_object\": \"" << JsonEscape(instance.actor_object_name)
+                  << "\", \"actor_class\": \"" << JsonEscape(instance.actor_class_name)
+                  << "\", \"mesh_package\": \"" << JsonEscape(instance.mesh_package_name)
+                  << "\", \"mesh_object\": \"" << JsonEscape(instance.mesh_object_name)
+                  << "\", \"inherited\": " << (instance.inherited_mesh ? "true" : "false")
+                  << ", \"has_location\": " << (instance.has_location ? "true" : "false")
+                  << ", \"location\": [" << instance.location.x << ", "
+                  << instance.location.y << ", " << instance.location.z << "]"
+                  << ", \"has_pre_pivot\": " << (instance.has_pre_pivot ? "true" : "false")
+                  << ", \"pre_pivot\": [" << instance.pre_pivot.x << ", "
+                  << instance.pre_pivot.y << ", " << instance.pre_pivot.z << "]"
+                  << ", \"has_draw_scale\": " << (instance.has_draw_scale ? "true" : "false")
+                  << ", \"draw_scale\": " << instance.draw_scale
+                  << ", \"has_draw_scale_3d\": "
+                  << (instance.has_draw_scale_3d ? "true" : "false")
+                  << ", \"draw_scale_3d\": [" << instance.draw_scale_3d.x << ", "
+                  << instance.draw_scale_3d.y << ", " << instance.draw_scale_3d.z << "]"
+                  << ", \"source_triangles\": " << instance.source_triangles
+                  << ", \"emitted_triangles\": " << instance.emitted_triangles
+                  << ", \"bounds_min\": [" << instance.bounds_min.x << ", "
+                  << instance.bounds_min.y << ", " << instance.bounds_min.z << "]"
+                  << ", \"bounds_max\": [" << instance.bounds_max.x << ", "
+                  << instance.bounds_max.y << ", " << instance.bounds_max.z << "]}"
+                  << (index + 1 == actor_meshes.instances.size() ? "" : ",") << '\n';
     }
     std::cout << "    ]";
     if (!actor_meshes.error.empty()) {
