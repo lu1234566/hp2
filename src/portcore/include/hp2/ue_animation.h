@@ -3,6 +3,8 @@
 #include "hp2/ue_skeletal.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,45 @@ struct PositionKey {
 struct AnimationBoneTrack {
     std::vector<QuaternionKey> rotations;
     std::vector<PositionKey> positions;
+};
+
+struct HP2AnimationBone {
+    std::string name;
+    std::uint32_t flags = 0;
+    std::int32_t parent_index = -1;
+};
+
+struct HP2AnimationTrack {
+    std::uint32_t flags = 0;
+    float position_scale = 0.0f;
+    float time_scale = 0.0f;
+    AnimationBoneTrack keys;
+};
+
+struct HP2AnimationMove {
+    Vec3 root_speed;
+    float track_time = 0.0f;
+    std::int32_t start_bone = 0;
+    std::uint32_t flags = 0;
+    std::vector<std::int32_t> bone_indices;
+    std::vector<HP2AnimationTrack> tracks;
+};
+
+struct HP2AnimationData {
+    bool valid = false;
+    std::filesystem::path package_path;
+    std::string package_name;
+    std::string object_name;
+    std::uint16_t file_version = 0;
+    std::size_t master_quaternion_count = 0;
+    std::size_t master_position_count = 0;
+    std::size_t master_delta_count = 0;
+    std::size_t total_track_count = 0;
+    std::size_t remaining_bytes = 0;
+    std::vector<HP2AnimationBone> bones;
+    std::vector<SkeletalAnimationSequence> sequences;
+    std::vector<HP2AnimationMove> moves;
+    std::string error;
 };
 
 struct CpuSkinInfluence {
@@ -66,6 +107,17 @@ bool BuildModelSpacePose(
 std::vector<Vec3> CpuSkinPoints(
     const std::vector<std::vector<CpuSkinInfluence>>& influences,
     const std::vector<BoneTransform>& model_pose
+);
+
+HP2AnimationData LoadHP2AnimationExport(
+    const PackageIndex& package,
+    std::size_t export_index
+);
+
+HP2AnimationData LoadNamedHP2Animation(
+    const std::filesystem::path& game_root,
+    const std::string& package_name,
+    const std::string& object_name
 );
 
 }  // namespace hp2
