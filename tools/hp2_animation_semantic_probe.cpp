@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +16,7 @@
 
 namespace {
 constexpr std::int32_t kMaxCount = 40000000;
+constexpr double kAngleScale = 1.57079633 / 32767.0;
 
 std::string Lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -26,7 +28,6 @@ std::string Lower(std::string value) {
 class Cursor {
 public:
     explicit Cursor(const std::vector<std::uint8_t>& bytes) : bytes_(bytes) {}
-    std::size_t Position() const { return position_; }
     std::size_t Remaining() const { return bytes_.size() - position_; }
     bool Skip(std::size_t count) {
         if (count > Remaining()) return false;
@@ -36,6 +37,18 @@ public:
     bool U8(std::uint8_t& value) {
         if (Remaining() < 1u) return false;
         value = bytes_[position_++];
+        return true;
+    }
+    bool U16(std::uint16_t& value) {
+        std::uint8_t a = 0, b = 0;
+        if (!U8(a) || !U8(b)) return false;
+        value = static_cast<std::uint16_t>(a | (static_cast<std::uint16_t>(b) << 8u));
+        return true;
+    }
+    bool I16(std::int16_t& value) {
+        std::uint16_t raw = 0;
+        if (!U16(raw)) return false;
+        value = static_cast<std::int16_t>(raw);
         return true;
     }
     bool U32(std::uint32_t& value) {
@@ -57,7 +70,7 @@ public:
         std::uint32_t raw = 0;
         if (!U32(raw)) return false;
         std::memcpy(&value, &raw, sizeof(value));
-        return true;
+        return std::isfinite(value);
     }
     bool Compact(std::int32_t& value) {
         std::uint8_t first = 0;
@@ -125,18 +138,28 @@ struct Totals {
     std::uint64_t quats = 0;
     std::uint64_t positions = 0;
     std::uint64_t deltas = 0;
+    std::uint64_t shape_mismatches = 0;
+    std::vector<bool> quat_is_root;
+    std::vector<float> position_scales;
+    std::vector<std::int32_t> delta_counts;
 };
 
-bool ReadTrackDescriptor(Cursor& cursor, Totals& totals) {
+bool ReadTrackDescriptor(Cursor& cursor, Totals& totals, bool root_track) {
     std::uint32_t flags = 0;
     std::int32_t q = 0, p = 0, t = 0;
     float pos_scale = 0.0f, time_scale = 0.0f;
     if (!cursor.U32(flags) || !Count(cursor, q) || !Count(cursor, p) || !Count(cursor, t)
         || !cursor.F32(pos_scale) || !cursor.F32(time_scale)) return false;
+    if (!((q == 0 || q == 1 || q == t) && (p == 0 || p == 1 || p == t))) {
+        ++totals.shape_mismatches;
+    }
     totals.tracks += 1u;
     totals.quats += static_cast<std::uint64_t>(q);
     totals.positions += static_cast<std::uint64_t>(p);
     totals.deltas += static_cast<std::uint64_t>(t);
+    totals.quat_is_root.insert(totals.quat_is_root.end(), static_cast<std::size_t>(q), root_track);
+    totals.position_scales.insert(totals.position_scales.end(), static_cast<std::size_t>(p), pos_scale);
+    totals.delta_counts.push_back(t);
     return true;
 }
 
@@ -189,7 +212,7 @@ int main(int argc, char** argv) {
         min_tracks = std::min(min_tracks, tracks);
         max_tracks = std::max(max_tracks, tracks);
         for (std::int32_t track = 0; track < tracks; ++track) {
-            if (!ReadTrackDescriptor(cursor, requested)) return 3;
+            if (!ReadTrackDescriptor(cursor, requested, track == 0)) return 3;
         }
     }
 
@@ -199,18 +222,69 @@ int main(int argc, char** argv) {
         if (!ReadSequence(cursor)) return 3;
     }
 
-    std::int32_t master_q = 0, master_p = 0, master_t = 0;
-    if (!Count(cursor, master_q) || !cursor.Skip(static_cast<std::size_t>(master_q) * 6u)
-        || !Count(cursor, master_p) || !cursor.Skip(static_cast<std::size_t>(master_p) * 6u)
-        || !Count(cursor, master_t) || !cursor.Skip(static_cast<std::size_t>(master_t))) return 3;
+    std::int32_t master_q = 0;
+    if (!Count(cursor, master_q) || static_cast<std::size_t>(master_q) != requested.quat_is_root.size()) return 3;
+    double quat_norm_min = std::numeric_limits<double>::infinity();
+    double quat_norm_max = 0.0;
+    std::uint64_t quat_xyz_overflow = 0;
+    for (std::int32_t i = 0; i < master_q; ++i) {
+        std::int16_t rx = 0, ry = 0, rz = 0;
+        if (!cursor.I16(rx) || !cursor.I16(ry) || !cursor.I16(rz)) return 3;
+        const double x = std::sin(static_cast<double>(rx) * kAngleScale);
+        const double y = -std::sin(static_cast<double>(ry) * kAngleScale);
+        const double z = std::sin(static_cast<double>(rz) * kAngleScale);
+        const double xyz2 = x*x + y*y + z*z;
+        if (xyz2 > 1.000001) ++quat_xyz_overflow;
+        double w = std::sqrt(std::max(0.0, 1.0 - xyz2));
+        if (!requested.quat_is_root[static_cast<std::size_t>(i)]) w = -w;
+        const double norm = std::sqrt(x*x + y*y + z*z + w*w);
+        quat_norm_min = std::min(quat_norm_min, norm);
+        quat_norm_max = std::max(quat_norm_max, norm);
+    }
+
+    std::int32_t master_p = 0;
+    if (!Count(cursor, master_p) || static_cast<std::size_t>(master_p) != requested.position_scales.size()) return 3;
+    double position_abs_max = 0.0;
+    for (std::int32_t i = 0; i < master_p; ++i) {
+        std::int16_t rx = 0, ry = 0, rz = 0;
+        if (!cursor.I16(rx) || !cursor.I16(ry) || !cursor.I16(rz)) return 3;
+        const double factor = static_cast<double>(requested.position_scales[static_cast<std::size_t>(i)]) / 32767.0;
+        position_abs_max = std::max(position_abs_max, std::fabs(static_cast<double>(rx) * factor));
+        position_abs_max = std::max(position_abs_max, std::fabs(static_cast<double>(ry) * factor));
+        position_abs_max = std::max(position_abs_max, std::fabs(static_cast<double>(rz) * factor));
+    }
+
+    std::int32_t master_t = 0;
+    if (!Count(cursor, master_t)) return 3;
+    std::vector<std::uint8_t> deltas;
+    deltas.reserve(static_cast<std::size_t>(master_t));
+    for (std::int32_t i = 0; i < master_t; ++i) {
+        std::uint8_t value = 0;
+        if (!cursor.U8(value)) return 3;
+        deltas.push_back(value);
+    }
+    std::size_t delta_cursor = 0;
+    std::uint32_t max_track_delta_time = 0;
+    for (const std::int32_t count : requested.delta_counts) {
+        std::uint32_t current = 0;
+        for (std::int32_t i = 0; i < count; ++i) {
+            if (delta_cursor >= deltas.size()) return 3;
+            current += deltas[delta_cursor++];
+        }
+        max_track_delta_time = std::max(max_track_delta_time, current);
+    }
 
     const bool pools_match = requested.quats == static_cast<std::uint64_t>(master_q)
         && requested.positions == static_cast<std::uint64_t>(master_p)
-        && requested.deltas == static_cast<std::uint64_t>(master_t);
+        && requested.deltas == static_cast<std::uint64_t>(master_t)
+        && delta_cursor == deltas.size();
     const bool closes = cursor.Remaining() == 0u;
+    const bool semantic_ok = requested.shape_mismatches == 0u
+        && std::isfinite(quat_norm_min) && quat_norm_min >= 0.999
+        && quat_norm_max <= 1.001;
 
     std::cout << "{\n"
-              << "  \"schema\":\"hp2-animation-master-track-v1\",\n"
+              << "  \"schema\":\"hp2-animation-decoded-keys-v2\",\n"
               << "  \"file_version\":" << package.summary.file_version << ",\n"
               << "  \"licensee_version\":" << package.summary.licensee_version << ",\n"
               << "  \"native_bytes\":" << bytes.size() << ",\n"
@@ -220,15 +294,19 @@ int main(int argc, char** argv) {
               << "  \"tracks\":" << requested.tracks << ",\n"
               << "  \"track_min\":" << (min_tracks == std::numeric_limits<std::int32_t>::max() ? 0 : min_tracks) << ",\n"
               << "  \"track_max\":" << max_tracks << ",\n"
-              << "  \"requested_quaternions\":" << requested.quats << ",\n"
-              << "  \"requested_positions\":" << requested.positions << ",\n"
-              << "  \"requested_deltas\":" << requested.deltas << ",\n"
               << "  \"master_quaternions\":" << master_q << ",\n"
               << "  \"master_positions\":" << master_p << ",\n"
               << "  \"master_deltas\":" << master_t << ",\n"
+              << "  \"descriptor_shape_mismatches\":" << requested.shape_mismatches << ",\n"
+              << "  \"quat_xyz_overflow\":" << quat_xyz_overflow << ",\n"
+              << "  \"quat_norm_min\":" << quat_norm_min << ",\n"
+              << "  \"quat_norm_max\":" << quat_norm_max << ",\n"
+              << "  \"position_abs_max\":" << position_abs_max << ",\n"
+              << "  \"max_track_delta_time\":" << max_track_delta_time << ",\n"
               << "  \"pools_match\":" << (pools_match ? "true" : "false") << ",\n"
               << "  \"remaining_bytes\":" << cursor.Remaining() << ",\n"
-              << "  \"closes\":" << (closes ? "true" : "false") << "\n"
+              << "  \"closes\":" << (closes ? "true" : "false") << ",\n"
+              << "  \"semantic_ok\":" << (semantic_ok ? "true" : "false") << "\n"
               << "}\n";
-    return pools_match && closes ? 0 : 5;
+    return pools_match && closes && semantic_ok ? 0 : 5;
 }
