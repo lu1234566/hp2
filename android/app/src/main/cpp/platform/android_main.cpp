@@ -1,5 +1,6 @@
 #include "hp2/runtime.h"
 #include "hp2/ue_actor.h"
+#include "hp2/ue_animation.h"
 #include "hp2/ue_lightmap.h"
 #include "hp2/ue_mesh.h"
 #include "hp2/ue_model.h"
@@ -117,13 +118,233 @@ std::optional<std::filesystem::path> FindMap(
     return std::nullopt;
 }
 
+std::string Lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
+}
+
+struct PointBounds {
+    bool valid = false;
+    hp2::Vec3 minimum;
+    hp2::Vec3 maximum;
+    hp2::Vec3 center;
+    float extent = 0.0f;
+};
+
+PointBounds MeasurePoints(const std::vector<hp2::Vec3>& points) {
+    PointBounds result;
+    for (const hp2::Vec3& point : points) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            return {};
+        }
+        if (!result.valid) {
+            result.minimum = point;
+            result.maximum = point;
+            result.valid = true;
+        } else {
+            result.minimum.x = std::min(result.minimum.x, point.x);
+            result.minimum.y = std::min(result.minimum.y, point.y);
+            result.minimum.z = std::min(result.minimum.z, point.z);
+            result.maximum.x = std::max(result.maximum.x, point.x);
+            result.maximum.y = std::max(result.maximum.y, point.y);
+            result.maximum.z = std::max(result.maximum.z, point.z);
+        }
+    }
+    if (!result.valid) return result;
+    result.center = {
+        (result.minimum.x + result.maximum.x) * 0.5f,
+        (result.minimum.y + result.maximum.y) * 0.5f,
+        (result.minimum.z + result.maximum.z) * 0.5f,
+    };
+    result.extent = std::max({
+        result.maximum.x - result.minimum.x,
+        result.maximum.y - result.minimum.y,
+        result.maximum.z - result.minimum.z,
+    });
+    result.valid = std::isfinite(result.extent) && result.extent > 0.0f;
+    return result;
+}
+
+bool StableAnimatedPose(
+    const std::vector<hp2::Vec3>& reference,
+    const std::vector<hp2::Vec3>& candidate,
+    float* deformation_score = nullptr
+) {
+    if (reference.size() != candidate.size() || reference.empty()) return false;
+    const PointBounds reference_bounds = MeasurePoints(reference);
+    const PointBounds candidate_bounds = MeasurePoints(candidate);
+    if (!reference_bounds.valid || !candidate_bounds.valid) return false;
+    const float extent_ratio = candidate_bounds.extent / reference_bounds.extent;
+    if (!std::isfinite(extent_ratio) || extent_ratio < 0.25f || extent_ratio > 4.0f) {
+        return false;
+    }
+    const hp2::Vec3 center_delta = {
+        candidate_bounds.center.x - reference_bounds.center.x,
+        candidate_bounds.center.y - reference_bounds.center.y,
+        candidate_bounds.center.z - reference_bounds.center.z,
+    };
+    const float center_distance = std::sqrt(
+        center_delta.x * center_delta.x + center_delta.y * center_delta.y
+        + center_delta.z * center_delta.z
+    );
+    if (!std::isfinite(center_distance) || center_distance > reference_bounds.extent * 2.0f) {
+        return false;
+    }
+    double squared = 0.0;
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+        const double x = static_cast<double>(candidate[index].x - reference[index].x)
+            - center_delta.x;
+        const double y = static_cast<double>(candidate[index].y - reference[index].y)
+            - center_delta.y;
+        const double z = static_cast<double>(candidate[index].z - reference[index].z)
+            - center_delta.z;
+        squared += x * x + y * y + z * z;
+    }
+    const float score = static_cast<float>(
+        std::sqrt(squared / static_cast<double>(reference.size())) / reference_bounds.extent
+    );
+    if (!std::isfinite(score) || score > 2.0f) return false;
+    if (deformation_score) *deformation_score = score;
+    return true;
+}
+
+struct CpuActorAnimation {
+    bool valid = false;
+    hp2::ActorMeshAnimationSource source;
+    hp2::SkeletalMeshSkinningData skinning;
+    hp2::HP2AnimationData animation;
+    std::vector<std::vector<hp2::CpuSkinInfluence>> influences;
+    std::size_t move_index = 0u;
+    float duration = 0.0f;
+    std::string sequence_name;
+    std::string error;
+};
+
+CpuActorAnimation LoadCpuActorAnimation(
+    const std::filesystem::path& game_root,
+    const hp2::ActorMeshAnimationSource& source
+) {
+    CpuActorAnimation result;
+    result.source = source;
+    if (!source.valid) {
+        result.error = "Duel10 has no preserved duelist animation source";
+        return result;
+    }
+    result.skinning = hp2::LoadNamedSkeletalMeshSkinning(
+        game_root, source.mesh.package_name, source.mesh.object_name
+    );
+    if (!result.skinning.valid) {
+        result.error = result.skinning.error;
+        return result;
+    }
+    const std::string animation_object = result.skinning.animation_object_name.empty()
+        ? "skGenMaleAnims" : result.skinning.animation_object_name;
+    result.animation = hp2::LoadNamedHP2Animation(
+        game_root, source.mesh.package_name, animation_object
+    );
+    if (!result.animation.valid) {
+        result.error = result.animation.error;
+        return result;
+    }
+    if (result.skinning.bones.size() != result.animation.bones.size()) {
+        result.error = "duelist mesh and animation bone counts differ";
+        return result;
+    }
+    for (std::size_t index = 0; index < result.skinning.bones.size(); ++index) {
+        if (Lowercase(result.skinning.bones[index].name)
+                != Lowercase(result.animation.bones[index].name)
+            || result.skinning.bones[index].parent_index
+                != result.animation.bones[index].parent_index) {
+            result.error = "duelist mesh and animation skeleton tables differ";
+            return result;
+        }
+    }
+    if (!hp2::BuildCpuSkinInfluences(result.skinning, result.influences, &result.error)) {
+        return result;
+    }
+    const auto reference_local = hp2::MakeReferenceLocalPose(result.skinning.bones);
+    std::vector<hp2::BoneTransform> reference_model;
+    if (!hp2::BuildModelSpacePose(
+            result.skinning.bones, reference_local, reference_model, &result.error
+        )) {
+        return result;
+    }
+    const std::vector<hp2::Vec3> rebound = hp2::CpuSkinPoints(
+        result.influences, reference_model
+    );
+    if (rebound.size() != result.skinning.reference_points.size()) {
+        result.error = "reference-pose skinning point count differs from the mesh";
+        return result;
+    }
+    float maximum_bind_error = 0.0f;
+    for (std::size_t index = 0; index < rebound.size(); ++index) {
+        const float x = rebound[index].x - result.skinning.reference_points[index].x;
+        const float y = rebound[index].y - result.skinning.reference_points[index].y;
+        const float z = rebound[index].z - result.skinning.reference_points[index].z;
+        maximum_bind_error = std::max(maximum_bind_error, std::sqrt(x * x + y * y + z * z));
+    }
+    if (!std::isfinite(maximum_bind_error) || maximum_bind_error > 0.01f) {
+        result.error = "reference-pose skinning does not reproduce the stored mesh points";
+        return result;
+    }
+
+    float best_rank = -1.0f;
+    for (std::size_t move_index = 0; move_index < result.animation.moves.size(); ++move_index) {
+        const float duration = hp2::AnimationMoveDuration(result.animation.moves[move_index]);
+        if (!std::isfinite(duration) || duration < 0.2f || duration > 60.0f) continue;
+        float best_deformation = 0.0f;
+        bool stable = true;
+        for (const float fraction : {0.37f, 0.63f}) {
+            std::vector<hp2::Vec3> sampled;
+            std::string sample_error;
+            if (!hp2::SampleAnimationMovePoints(
+                    result.skinning, result.animation, move_index, duration * fraction,
+                    result.influences, sampled, &sample_error
+                )) {
+                stable = false;
+                break;
+            }
+            float deformation = 0.0f;
+            if (!StableAnimatedPose(result.skinning.reference_points, sampled, &deformation)) {
+                stable = false;
+                break;
+            }
+            best_deformation = std::max(best_deformation, deformation);
+        }
+        if (!stable || best_deformation < 0.002f) continue;
+        const std::string name = move_index < result.animation.sequences.size()
+            ? result.animation.sequences[move_index].name : std::string{};
+        const std::string lower_name = Lowercase(name);
+        float preference = 1.0f;
+        if (lower_name.find("walk") != std::string::npos) preference = 2.0f;
+        else if (lower_name.find("idle") != std::string::npos
+                 || lower_name.find("stand") != std::string::npos) preference = 1.5f;
+        const float rank = best_deformation * preference;
+        if (rank > best_rank) {
+            best_rank = rank;
+            result.move_index = move_index;
+            result.duration = duration;
+            result.sequence_name = name;
+        }
+    }
+    if (best_rank < 0.0f) {
+        result.error = "no stable visibly animated duelist sequence was found";
+        return result;
+    }
+    result.valid = true;
+    return result;
+}
+
 class BootstrapRenderer {
 public:
     void SetScene(
         const hp2::ModelGeometry& geometry,
         hp2::DecodedTextureSet texture_set,
         hp2::LightMapAtlas light_maps,
-        hp2::ActorMeshScene actor_meshes
+        hp2::ActorMeshScene actor_meshes,
+        CpuActorAnimation actor_animation
     ) {
         mesh_vertices_.clear();
         draw_batches_.clear();
@@ -136,6 +357,12 @@ public:
         actor_focus_available_ = false;
         actor_focus_enabled_ = false;
         actor_focus_manual_ = false;
+        animation_focus_available_ = false;
+        animation_frame_rejected_ = false;
+        animation_vertex_float_offset_ = 0u;
+        animation_vertex_float_count_ = 0u;
+        animated_vertex_bindings_.clear();
+        animation_ = std::move(actor_animation);
 
         std::unordered_map<std::int32_t, std::size_t> material_slots;
         for (hp2::DecodedTexture& texture : texture_set.textures) {
@@ -288,11 +515,19 @@ public:
         std::vector<std::vector<const hp2::ActorMeshTriangle*>> focus_actor_groups(
             textures_.size() + 1u
         );
+        std::vector<std::vector<const hp2::ActorMeshTriangle*>> animation_actor_groups(
+            textures_.size() + 1u
+        );
         bool focus_bounds_valid = false;
         hp2::Vec3 focus_bounds_min{};
         hp2::Vec3 focus_bounds_max{};
+        bool animation_bounds_valid = false;
+        hp2::Vec3 animation_bounds_min{};
+        hp2::Vec3 animation_bounds_max{};
         const float focus_margin = largest_extent * 0.08f;
-        for (const hp2::ActorMeshTriangle& triangle : actor_meshes.triangles) {
+        for (std::size_t triangle_index = 0; triangle_index < actor_meshes.triangles.size();
+             ++triangle_index) {
+            const hp2::ActorMeshTriangle& triangle = actor_meshes.triangles[triangle_index];
             std::size_t group = 0;
             if (triangle.material_index >= 0
                 && static_cast<std::size_t>(triangle.material_index)
@@ -305,6 +540,26 @@ public:
                 }
             }
             actor_groups[group].push_back(&triangle);
+            const std::size_t animation_first = animation_.source.first_triangle;
+            const std::size_t animation_end = animation_first + animation_.source.triangle_count;
+            if (animation_.valid && triangle_index >= animation_first
+                && triangle_index < animation_end) {
+                animation_actor_groups[group].push_back(&triangle);
+                for (const hp2::Vec3& point : triangle.points) {
+                    if (!animation_bounds_valid) {
+                        animation_bounds_min = point;
+                        animation_bounds_max = point;
+                        animation_bounds_valid = true;
+                    } else {
+                        animation_bounds_min.x = std::min(animation_bounds_min.x, point.x);
+                        animation_bounds_min.y = std::min(animation_bounds_min.y, point.y);
+                        animation_bounds_min.z = std::min(animation_bounds_min.z, point.z);
+                        animation_bounds_max.x = std::max(animation_bounds_max.x, point.x);
+                        animation_bounds_max.y = std::max(animation_bounds_max.y, point.y);
+                        animation_bounds_max.z = std::max(animation_bounds_max.z, point.z);
+                    }
+                }
+            }
             const hp2::Vec3 centroid = {
                 (triangle.points[0].x + triangle.points[1].x + triangle.points[2].x) / 3.0f,
                 (triangle.points[0].y + triangle.points[1].y + triangle.points[2].y) / 3.0f,
@@ -348,6 +603,23 @@ public:
             const float actor_extent = std::max({actor_extent_x, actor_extent_y, actor_extent_z});
             if (std::isfinite(actor_extent) && actor_extent > 0.0f) {
                 actor_scale = 1.55f / actor_extent;
+            }
+        }
+        animation_center_ = {};
+        animation_scale_ = 0.0f;
+        if (animation_bounds_valid) {
+            animation_center_ = {
+                (animation_bounds_min.x + animation_bounds_max.x) * 0.5f,
+                (animation_bounds_min.y + animation_bounds_max.y) * 0.5f,
+                (animation_bounds_min.z + animation_bounds_max.z) * 0.5f,
+            };
+            const float animation_extent = std::max({
+                animation_bounds_max.x - animation_bounds_min.x,
+                animation_bounds_max.y - animation_bounds_min.y,
+                animation_bounds_max.z - animation_bounds_min.z,
+            });
+            if (std::isfinite(animation_extent) && animation_extent > 0.0f) {
+                animation_scale_ = 1.55f / animation_extent;
             }
         }
         for (std::size_t group = 0; group < actor_groups.size(); ++group) {
@@ -401,10 +673,46 @@ public:
                     static_cast<GLint>(focus_first_vertex),
                     static_cast<GLsizei>(focus_vertex_count),
                     texture_slot,
-                    true
+                    SceneView::ActorFocus
                 });
                 actor_focus_available_ = actor_focus_available_ || focus_vertex_count > 0;
             }
+        }
+        if (animation_.valid && animation_scale_ > 0.0f) {
+            animation_vertex_float_offset_ = mesh_vertices_.size();
+            for (std::size_t group = 0; group < animation_actor_groups.size(); ++group) {
+                if (animation_actor_groups[group].empty()) continue;
+                const std::int32_t texture_slot = group == 0
+                    ? -1 : static_cast<std::int32_t>(group - 1u);
+                const std::size_t first_vertex = mesh_vertices_.size() / 9u;
+                for (const hp2::ActorMeshTriangle* triangle : animation_actor_groups[group]) {
+                    for (std::size_t corner = 0; corner < triangle->points.size(); ++corner) {
+                        const hp2::Vec3& point = triangle->points[corner];
+                        animated_vertex_bindings_.push_back({
+                            mesh_vertices_.size(), triangle->source_point_indices[corner]
+                        });
+                        mesh_vertices_.push_back((point.x - animation_center_.x) * animation_scale_);
+                        mesh_vertices_.push_back((point.y - animation_center_.y) * animation_scale_);
+                        mesh_vertices_.push_back((point.z - animation_center_.z) * animation_scale_);
+                        mesh_vertices_.push_back(triangle->texture_coordinates[corner].u);
+                        mesh_vertices_.push_back(triangle->texture_coordinates[corner].v);
+                        mesh_vertices_.push_back(0.0f);
+                        mesh_vertices_.push_back(0.0f);
+                        mesh_vertices_.push_back(texture_slot >= 0 ? 1.0f : 0.0f);
+                        mesh_vertices_.push_back(0.0f);
+                    }
+                }
+                const std::size_t vertex_count = mesh_vertices_.size() / 9u - first_vertex;
+                draw_batches_.push_back({
+                    static_cast<GLint>(first_vertex),
+                    static_cast<GLsizei>(vertex_count),
+                    texture_slot,
+                    SceneView::AnimationFocus
+                });
+            }
+            animation_vertex_float_count_ = mesh_vertices_.size() - animation_vertex_float_offset_;
+            animation_focus_available_ = !animated_vertex_bindings_.empty()
+                && animation_vertex_float_count_ > 0u;
         }
         actor_focus_enabled_ = false;
         if (ready()) {
@@ -589,11 +897,22 @@ private:
         std::vector<std::uint8_t> pixels;
     };
 
+    enum class SceneView : std::uint8_t {
+        World,
+        ActorFocus,
+        AnimationFocus,
+    };
+
     struct DrawBatch {
         GLint first = 0;
         GLsizei count = 0;
         std::int32_t texture_slot = -1;
-        bool actor_focus_only = false;
+        SceneView view = SceneView::World;
+    };
+
+    struct AnimatedVertexBinding {
+        std::size_t float_offset = 0u;
+        std::uint32_t source_point_index = 0u;
     };
 
     static GLuint CompileShader(GLenum type, const char* source) {
@@ -819,7 +1138,8 @@ void main() {
         glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
         glBufferData(GL_ARRAY_BUFFER,
                      static_cast<GLsizeiptr>(mesh_vertices_.size() * sizeof(float)),
-                     mesh_vertices_.data(), GL_STATIC_DRAW);
+                     mesh_vertices_.data(), animation_focus_available_ ? GL_DYNAMIC_DRAW
+                                                                       : GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), nullptr);
         glEnableVertexAttribArray(1);
@@ -842,6 +1162,55 @@ void main() {
              actor_triangle_count_, draw_batches_.size());
     }
 
+    void UpdateAnimatedActor(float playback_time, bool animate) {
+        if (!animation_focus_available_ || vertex_buffer_ == 0 || !animation_.valid) return;
+        std::vector<hp2::Vec3> local_points = animation_.skinning.reference_points;
+        if (animate) {
+            const float duration = std::max(animation_.duration, 0.001f);
+            const float sample_time = std::fmod(std::max(playback_time, 0.0f), duration);
+            std::vector<hp2::Vec3> sampled;
+            std::string sample_error;
+            if (hp2::SampleAnimationMovePoints(
+                    animation_.skinning, animation_.animation, animation_.move_index,
+                    sample_time, animation_.influences, sampled, &sample_error
+                ) && StableAnimatedPose(animation_.skinning.reference_points, sampled)) {
+                local_points = std::move(sampled);
+            } else if (!animation_frame_rejected_) {
+                LOGE("G5d rejected unstable animation frame: %s", sample_error.c_str());
+                animation_frame_rejected_ = true;
+            }
+        }
+
+        std::vector<hp2::Vec3> world_points;
+        world_points.reserve(local_points.size());
+        for (const hp2::Vec3& point : local_points) {
+            world_points.push_back(hp2::TransformActorMeshVertex(
+                point, animation_.source.mesh, animation_.source.actor
+            ));
+        }
+        for (const AnimatedVertexBinding& binding : animated_vertex_bindings_) {
+            if (binding.float_offset + 2u >= mesh_vertices_.size()
+                || binding.source_point_index >= world_points.size()) {
+                continue;
+            }
+            const hp2::Vec3& point = world_points[binding.source_point_index];
+            mesh_vertices_[binding.float_offset] =
+                (point.x - animation_center_.x) * animation_scale_;
+            mesh_vertices_[binding.float_offset + 1u] =
+                (point.y - animation_center_.y) * animation_scale_;
+            mesh_vertices_[binding.float_offset + 2u] =
+                (point.z - animation_center_.z) * animation_scale_;
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLintptr>(animation_vertex_float_offset_ * sizeof(float)),
+            static_cast<GLsizeiptr>(animation_vertex_float_count_ * sizeof(float)),
+            mesh_vertices_.data() + animation_vertex_float_offset_
+        );
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
     void DrawGeometry(float seconds, float controller_yaw) {
         if (program_ == 0 || vertex_array_ == 0 || mesh_vertex_count_ <= 0) {
             return;
@@ -861,15 +1230,33 @@ void main() {
         glBindTexture(GL_TEXTURE_2D,
                       light_map_texture_id_ != 0 ? light_map_texture_id_ : fallback_texture_id_);
         glUniform1i(light_map_uniform_, 1);
-        glBindVertexArray(vertex_array_);
-        const float automatic_phase = std::fmod(std::max(seconds, 0.0f), 14.0f);
-        const bool show_actor_focus = actor_focus_available_
-            && (actor_focus_manual_ ? actor_focus_enabled_
-                                    : (automatic_phase >= 8.0f && automatic_phase < 12.0f));
-        for (const DrawBatch& batch : draw_batches_) {
-            if (batch.actor_focus_only != show_actor_focus) {
-                continue;
+        SceneView selected_view = SceneView::World;
+        float automatic_phase = 0.0f;
+        if (actor_focus_manual_) {
+            if (actor_focus_enabled_ && actor_focus_available_) {
+                selected_view = SceneView::ActorFocus;
             }
+        } else if (animation_focus_available_) {
+            automatic_phase = std::fmod(std::max(seconds, 0.0f), 20.0f);
+            if (automatic_phase >= 6.0f && automatic_phase < 10.0f
+                && actor_focus_available_) {
+                selected_view = SceneView::ActorFocus;
+            } else if (automatic_phase >= 10.0f) {
+                selected_view = SceneView::AnimationFocus;
+            }
+        } else {
+            automatic_phase = std::fmod(std::max(seconds, 0.0f), 14.0f);
+            if (automatic_phase >= 8.0f && automatic_phase < 12.0f
+                && actor_focus_available_) {
+                selected_view = SceneView::ActorFocus;
+            }
+        }
+        if (selected_view == SceneView::AnimationFocus) {
+            UpdateAnimatedActor(automatic_phase - 14.0f, automatic_phase >= 14.0f);
+        }
+        glBindVertexArray(vertex_array_);
+        for (const DrawBatch& batch : draw_batches_) {
+            if (batch.view != selected_view) continue;
             GLuint texture = fallback_texture_id_;
             if (batch.texture_slot >= 0
                 && static_cast<std::size_t>(batch.texture_slot) < texture_ids_.size()) {
@@ -924,6 +1311,14 @@ void main() {
     bool actor_focus_available_ = false;
     bool actor_focus_enabled_ = false;
     bool actor_focus_manual_ = false;
+    CpuActorAnimation animation_;
+    std::vector<AnimatedVertexBinding> animated_vertex_bindings_;
+    hp2::Vec3 animation_center_;
+    float animation_scale_ = 0.0f;
+    std::size_t animation_vertex_float_offset_ = 0u;
+    std::size_t animation_vertex_float_count_ = 0u;
+    bool animation_focus_available_ = false;
+    bool animation_frame_rejected_ = false;
 };
 
 class AndroidShell {
@@ -1071,7 +1466,7 @@ private:
         const auto map_path = FindMap(game_root_, "duel10.unr");
         if (!map_path.has_value()) {
             geometry_ = {};
-            renderer_.SetScene(geometry_, {}, {}, {});
+            renderer_.SetScene(geometry_, {}, {}, {}, {});
             LOGI("G5 Duel10.unr is not installed; keeping diagnostic renderer");
             return;
         }
@@ -1093,6 +1488,12 @@ private:
         hp2::ActorMeshScene actor_meshes;
         if (actors.valid) {
             actor_meshes = hp2::LoadDirectActorMeshes(game_root_, map_package, actors);
+        }
+        CpuActorAnimation actor_animation;
+        if (actor_meshes.animation_source.valid) {
+            actor_animation = LoadCpuActorAnimation(
+                game_root_, actor_meshes.animation_source
+            );
         }
         if (geometry_.valid) {
             LOGI("G4 BSP ready: map=%s model=%s points=%zu nodes=%zu triangles=%zu",
@@ -1138,8 +1539,21 @@ private:
         } else {
             LOGE("G5 actor mesh decode failed: %s", actor_meshes.error.c_str());
         }
+        if (actor_animation.valid) {
+            LOGI("G5d CPU animation ready: mesh=%s animation=%s bones=%zu points=%zu influences=%zu moves=%zu sequence=%s duration=%.3f",
+                 actor_animation.source.mesh.object_name.c_str(),
+                 actor_animation.animation.object_name.c_str(),
+                 actor_animation.skinning.bones.size(),
+                 actor_animation.skinning.reference_points.size(),
+                 actor_animation.skinning.weight_words.size(),
+                 actor_animation.animation.moves.size(),
+                 actor_animation.sequence_name.c_str(), actor_animation.duration);
+        } else if (actor_meshes.animation_source.valid) {
+            LOGE("G5d CPU animation unavailable: %s", actor_animation.error.c_str());
+        }
         renderer_.SetScene(
-            geometry_, std::move(textures), std::move(light_maps), std::move(actor_meshes)
+            geometry_, std::move(textures), std::move(light_maps), std::move(actor_meshes),
+            std::move(actor_animation)
         );
     }
 

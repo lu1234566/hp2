@@ -1,4 +1,4 @@
-name: Build HP2 Mobile G5d probe dev
+name: Build HP2 Mobile G5d runtime dev
 
 on:
   push:
@@ -60,18 +60,23 @@ jobs:
           grep -Fq '"${PORTCORE_ROOT}/ue_mesh.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq '"${PORTCORE_ROOT}/ue_skeletal.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq '"${PORTCORE_ROOT}/ue_animation.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_animation_hp2.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_animation_hp2_codec.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq 'LoadSurfaceTextures' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'BuildVisibilityLightMapAtlas' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'LoadLevelActorCensus' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'LoadDirectActorMeshes' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'ScanClassDefaultProperties' src/portcore/ue_mesh.cpp
           grep -Fq 'LoadSkeletalMeshSkinningExport' src/portcore/ue_skeletal.cpp
+          grep -Fq 'LoadNamedHP2Animation' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq 'SampleAnimationMovePoints' android/app/src/main/cpp/platform/android_main.cpp
+          grep -Fq 'glBufferSubData' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'ToggleActorFocus' android/app/src/main/cpp/platform/android_main.cpp
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signing.txt"
           grep -Fiq 'e853843728a61a4ffb5b6fa1141af5a74d9114039eac6daec53fde64b58d1e2d' "$RUNNER_TEMP/apk-signing.txt"
       - uses: actions/upload-artifact@v7
         with:
-          name: HP2-Mobile-G5d-probe-dev-debug
+          name: HP2-Mobile-G5d-runtime-dev-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

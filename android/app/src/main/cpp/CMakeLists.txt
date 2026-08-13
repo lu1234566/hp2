@@ -14,6 +14,8 @@ add_library(hp2engine SHARED
     "${PORTCORE_ROOT}/runtime.cpp"
     "${PORTCORE_ROOT}/ue_actor.cpp"
     "${PORTCORE_ROOT}/ue_animation.cpp"
+    "${PORTCORE_ROOT}/ue_animation_hp2.cpp"
+    "${PORTCORE_ROOT}/ue_animation_hp2_codec.cpp"
     "${PORTCORE_ROOT}/ue_lightmap.cpp"
     "${PORTCORE_ROOT}/ue_mesh.cpp"
     "${PORTCORE_ROOT}/ue_model.cpp"
