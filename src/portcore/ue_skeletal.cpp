@@ -176,6 +176,20 @@ std::string NameAt(const PackageIndex& package, std::int32_t index) {
     return package.names[static_cast<std::size_t>(index)].value;
 }
 
+std::string ObjectNameAt(const PackageIndex& package, std::int32_t reference) {
+    if (reference > 0 && static_cast<std::size_t>(reference) <= package.exports.size()) {
+        return package.exports[static_cast<std::size_t>(reference - 1)].object_name;
+    }
+    if (reference < 0) {
+        const std::int64_t import_index = -static_cast<std::int64_t>(reference) - 1;
+        if (import_index >= 0
+            && static_cast<std::size_t>(import_index) < package.imports.size()) {
+            return package.imports[static_cast<std::size_t>(import_index)].object_name;
+        }
+    }
+    return {};
+}
+
 std::filesystem::path FindPackage(
     const std::filesystem::path& root,
     const std::string& package_name
@@ -420,7 +434,8 @@ SkeletalMeshSkinningData LoadSkeletalMeshSkinningExport(
             result.local_points.push_back(ReadVec3(reader));
         }
         reader.U32();
-        reader.CompactIndex();
+        result.animation_reference = reader.CompactIndex();
+        result.animation_object_name = ObjectNameAt(package, result.animation_reference);
         reader.U32();
         reader.Skip(48u, "SkeletalMesh.WeaponCoords");
 

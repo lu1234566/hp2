@@ -8,6 +8,9 @@ mkdir -p "$BUILD_DIR"
 common_sources=(
     "$ROOT/src/portcore/runtime.cpp"
     "$ROOT/src/portcore/ue_actor.cpp"
+    "$ROOT/src/portcore/ue_animation.cpp"
+    "$ROOT/src/portcore/ue_animation_hp2.cpp"
+    "$ROOT/src/portcore/ue_animation_hp2_codec.cpp"
     "$ROOT/src/portcore/ue_lightmap.cpp"
     "$ROOT/src/portcore/ue_mesh.cpp"
     "$ROOT/src/portcore/ue_model.cpp"
@@ -34,11 +37,19 @@ g++ "${common_flags[@]}" "${common_sources[@]}" \
     "$ROOT/tools/hp2_skeletal_probe.cpp" -o "$BUILD_DIR/hp2_skeletal_probe"
 
 g++ "${common_flags[@]}" "${common_sources[@]}" \
+    "$ROOT/tools/hp2_animation_semantic_probe.cpp" \
+    -o "$BUILD_DIR/hp2_animation_semantic_probe"
+
+g++ "${common_flags[@]}" "${common_sources[@]}" \
     "$ROOT/tests/portcore_tests.cpp" -o "$BUILD_DIR/portcore_tests"
 
 g++ "${common_flags[@]}" "${common_sources[@]}" \
     "$ROOT/tests/skeletal_probe_tests.cpp" -o "$BUILD_DIR/skeletal_probe_tests"
 
+g++ "${common_flags[@]}" "${common_sources[@]}" \
+    "$ROOT/tests/animation_math_tests.cpp" -o "$BUILD_DIR/animation_math_tests"
+
 "$BUILD_DIR/portcore_tests"
 "$BUILD_DIR/skeletal_probe_tests"
+"$BUILD_DIR/animation_math_tests"
 echo "Host tools: $BUILD_DIR"

@@ -6,6 +6,7 @@ on:
     branches:
       - "agent/hp2-g5d-skeletal-probe"
       - "agent/hp2-g5d-pose-skinning"
+      - "agent/hp2-g5d-runtime-integration"
     paths:
       - ".github/workflows/probe-animation-source.yml"
       - "scripts/probe-animation-source.sh"

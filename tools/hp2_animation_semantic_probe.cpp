@@ -1,312 +1,242 @@
-#include "hp2/ue_actor.h"
-#include "hp2/ue_package.h"
+#include "hp2/ue_animation.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
 
 namespace {
-constexpr std::int32_t kMaxCount = 40000000;
-constexpr double kAngleScale = 1.57079633 / 32767.0;
 
-std::string Lower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
+std::string Lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
     });
     return value;
 }
 
-class Cursor {
-public:
-    explicit Cursor(const std::vector<std::uint8_t>& bytes) : bytes_(bytes) {}
-    std::size_t Remaining() const { return bytes_.size() - position_; }
-    bool Skip(std::size_t count) {
-        if (count > Remaining()) return false;
-        position_ += count;
-        return true;
-    }
-    bool U8(std::uint8_t& value) {
-        if (Remaining() < 1u) return false;
-        value = bytes_[position_++];
-        return true;
-    }
-    bool U16(std::uint16_t& value) {
-        std::uint8_t a = 0, b = 0;
-        if (!U8(a) || !U8(b)) return false;
-        value = static_cast<std::uint16_t>(a | (static_cast<std::uint16_t>(b) << 8u));
-        return true;
-    }
-    bool I16(std::int16_t& value) {
-        std::uint16_t raw = 0;
-        if (!U16(raw)) return false;
-        value = static_cast<std::int16_t>(raw);
-        return true;
-    }
-    bool U32(std::uint32_t& value) {
-        if (Remaining() < 4u) return false;
-        value = static_cast<std::uint32_t>(bytes_[position_])
-            | (static_cast<std::uint32_t>(bytes_[position_ + 1u]) << 8u)
-            | (static_cast<std::uint32_t>(bytes_[position_ + 2u]) << 16u)
-            | (static_cast<std::uint32_t>(bytes_[position_ + 3u]) << 24u);
-        position_ += 4u;
-        return true;
-    }
-    bool I32(std::int32_t& value) {
-        std::uint32_t raw = 0;
-        if (!U32(raw)) return false;
-        value = static_cast<std::int32_t>(raw);
-        return true;
-    }
-    bool F32(float& value) {
-        std::uint32_t raw = 0;
-        if (!U32(raw)) return false;
-        std::memcpy(&value, &raw, sizeof(value));
-        return std::isfinite(value);
-    }
-    bool Compact(std::int32_t& value) {
-        std::uint8_t first = 0;
-        if (!U8(first)) return false;
-        const bool negative = (first & 0x80u) != 0u;
-        std::uint32_t magnitude = first & 0x3fu;
-        bool more = (first & 0x40u) != 0u;
-        std::uint32_t shift = 6u;
-        for (int index = 1; more; ++index) {
-            if (index >= 5 || shift >= 32u) return false;
-            std::uint8_t next = 0;
-            if (!U8(next)) return false;
-            const std::uint32_t payload = next & 0x7fu;
-            if (shift == 27u && payload > 0x0fu) return false;
-            magnitude |= payload << shift;
-            shift += 7u;
-            more = (next & 0x80u) != 0u;
+std::string JsonEscape(const std::string& value) {
+    std::string result;
+    for (const char character : value) {
+        switch (character) {
+            case '\\': result += "\\\\"; break;
+            case '"': result += "\\\""; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(character) >= 0x20u) result += character;
+                break;
         }
-        if (magnitude > static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) return false;
-        value = static_cast<std::int32_t>(magnitude);
-        if (negative) value = -value;
-        return true;
     }
-private:
-    const std::vector<std::uint8_t>& bytes_;
-    std::size_t position_ = 0u;
+    return result;
+}
+
+struct Bounds {
+    bool valid = false;
+    hp2::Vec3 minimum;
+    hp2::Vec3 maximum;
+    hp2::Vec3 center;
+    float extent = 0.0f;
 };
 
-bool Count(Cursor& cursor, std::int32_t& value, std::int32_t limit = kMaxCount) {
-    return cursor.Compact(value) && value >= 0 && value <= limit;
-}
-
-std::filesystem::path FindPackage(const std::filesystem::path& root, const std::string& stem) {
-    const std::string wanted = Lower(stem);
-    std::error_code ec;
-    const auto options = std::filesystem::directory_options::skip_permission_denied;
-    for (std::filesystem::recursive_directory_iterator it(root, options, ec), end; it != end;) {
-        if (ec) { ec.clear(); it.increment(ec); continue; }
-        if (it->is_regular_file(ec) && !ec && hp2::IsPackageExtension(it->path())
-            && Lower(it->path().stem().string()) == wanted) return it->path();
-        it.increment(ec);
+Bounds Measure(const std::vector<hp2::Vec3>& points) {
+    Bounds result;
+    for (const hp2::Vec3& point : points) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            return {};
+        }
+        if (!result.valid) {
+            result.minimum = point;
+            result.maximum = point;
+            result.valid = true;
+        } else {
+            result.minimum.x = std::min(result.minimum.x, point.x);
+            result.minimum.y = std::min(result.minimum.y, point.y);
+            result.minimum.z = std::min(result.minimum.z, point.z);
+            result.maximum.x = std::max(result.maximum.x, point.x);
+            result.maximum.y = std::max(result.maximum.y, point.y);
+            result.maximum.z = std::max(result.maximum.z, point.z);
+        }
     }
-    return {};
+    if (!result.valid) return result;
+    result.center = {
+        (result.minimum.x + result.maximum.x) * 0.5f,
+        (result.minimum.y + result.maximum.y) * 0.5f,
+        (result.minimum.z + result.maximum.z) * 0.5f,
+    };
+    result.extent = std::max({
+        result.maximum.x - result.minimum.x,
+        result.maximum.y - result.minimum.y,
+        result.maximum.z - result.minimum.z,
+    });
+    result.valid = std::isfinite(result.extent) && result.extent > 0.0f;
+    return result;
 }
 
-std::vector<std::uint8_t> NativePayload(const hp2::PackageIndex& package, const std::string& object_name) {
-    for (std::size_t index = 0; index < package.exports.size(); ++index) {
-        const auto& entry = package.exports[index];
-        if (Lower(entry.class_name) != "animation" || Lower(entry.object_name) != Lower(object_name)) continue;
-        const auto properties = hp2::LoadObjectProperties(package, index);
-        if (!properties.valid || entry.serial_size <= 0 || entry.serial_offset < 0) return {};
-        std::ifstream input(package.summary.path, std::ios::binary);
-        input.seekg(entry.serial_offset, std::ios::beg);
-        std::vector<std::uint8_t> payload(static_cast<std::size_t>(entry.serial_size));
-        input.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
-        if (input.gcount() != static_cast<std::streamsize>(payload.size())
-            || properties.native_data_offset > payload.size()) return {};
-        return {payload.begin() + static_cast<std::ptrdiff_t>(properties.native_data_offset), payload.end()};
+float DeformationScore(
+    const std::vector<hp2::Vec3>& reference,
+    const std::vector<hp2::Vec3>& candidate
+) {
+    if (reference.size() != candidate.size() || reference.empty()) return -1.0f;
+    const Bounds a = Measure(reference);
+    const Bounds b = Measure(candidate);
+    if (!a.valid || !b.valid) return -1.0f;
+    const float ratio = b.extent / a.extent;
+    if (!std::isfinite(ratio) || ratio < 0.25f || ratio > 4.0f) return -1.0f;
+    const hp2::Vec3 center_delta = {
+        b.center.x - a.center.x,
+        b.center.y - a.center.y,
+        b.center.z - a.center.z,
+    };
+    double squared = 0.0;
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+        const double x = static_cast<double>(candidate[index].x - reference[index].x)
+            - center_delta.x;
+        const double y = static_cast<double>(candidate[index].y - reference[index].y)
+            - center_delta.y;
+        const double z = static_cast<double>(candidate[index].z - reference[index].z)
+            - center_delta.z;
+        squared += x * x + y * y + z * z;
     }
-    return {};
+    const float score = static_cast<float>(
+        std::sqrt(squared / static_cast<double>(reference.size())) / a.extent
+    );
+    return std::isfinite(score) && score <= 2.0f ? score : -1.0f;
 }
 
-struct Totals {
-    std::uint64_t tracks = 0;
-    std::uint64_t quats = 0;
-    std::uint64_t positions = 0;
-    std::uint64_t deltas = 0;
-    std::uint64_t shape_mismatches = 0;
-    std::vector<bool> quat_is_root;
-    std::vector<float> position_scales;
-    std::vector<std::int32_t> delta_counts;
-};
-
-bool ReadTrackDescriptor(Cursor& cursor, Totals& totals, bool root_track) {
-    std::uint32_t flags = 0;
-    std::int32_t q = 0, p = 0, t = 0;
-    float pos_scale = 0.0f, time_scale = 0.0f;
-    if (!cursor.U32(flags) || !Count(cursor, q) || !Count(cursor, p) || !Count(cursor, t)
-        || !cursor.F32(pos_scale) || !cursor.F32(time_scale)) return false;
-    if (!((q == 0 || q == 1 || q == t) && (p == 0 || p == 1 || p == t))) {
-        ++totals.shape_mismatches;
-    }
-    totals.tracks += 1u;
-    totals.quats += static_cast<std::uint64_t>(q);
-    totals.positions += static_cast<std::uint64_t>(p);
-    totals.deltas += static_cast<std::uint64_t>(t);
-    totals.quat_is_root.insert(totals.quat_is_root.end(), static_cast<std::size_t>(q), root_track);
-    totals.position_scales.insert(totals.position_scales.end(), static_cast<std::size_t>(p), pos_scale);
-    totals.delta_counts.push_back(t);
-    return true;
-}
-
-bool ReadSequence(Cursor& cursor) {
-    std::int32_t name = 0, group = 0, notify_count = 0;
-    std::int32_t start_frame = 0, frame_count = 0;
-    float rate = 0.0f;
-    if (!cursor.Compact(name) || !cursor.Compact(group)
-        || !cursor.I32(start_frame) || !cursor.I32(frame_count)
-        || !Count(cursor, notify_count, 1000000)) return false;
-    for (std::int32_t i = 0; i < notify_count; ++i) {
-        float time = 0.0f;
-        std::int32_t function = 0;
-        if (!cursor.F32(time) || !cursor.Compact(function)) return false;
-    }
-    return cursor.F32(rate);
-}
-}
+}  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 4) return 64;
-    const auto package_path = FindPackage(argv[1], argv[2]);
-    if (package_path.empty()) return 2;
-    const auto package = hp2::LoadPackageIndex(package_path);
-    if (!package.valid) return 2;
-    const auto bytes = NativePayload(package, argv[3]);
-    if (bytes.empty()) return 2;
-
-    Cursor cursor(bytes);
-    std::int32_t bones = 0;
-    if (!Count(cursor, bones, 4096)) return 3;
-    for (std::int32_t i = 0; i < bones; ++i) {
-        std::int32_t name = 0, parent = 0;
-        std::uint32_t flags = 0;
-        if (!cursor.Compact(name) || !cursor.U32(flags) || !cursor.I32(parent)) return 3;
+    if (argc != 4) {
+        std::cerr << "Usage: hp2_animation_semantic_probe <game-root> <package> <animation>\n";
+        return 64;
     }
 
-    std::int32_t moves = 0;
-    if (!Count(cursor, moves, 4096)) return 3;
-    Totals requested;
-    std::int32_t min_tracks = std::numeric_limits<std::int32_t>::max();
-    std::int32_t max_tracks = 0;
-    for (std::int32_t move = 0; move < moves; ++move) {
-        if (!cursor.Skip(24u)) return 3;
-        std::int32_t bone_indices = 0;
-        if (!Count(cursor, bone_indices, 8192)
-            || !cursor.Skip(static_cast<std::size_t>(bone_indices) * 4u)) return 3;
-        std::int32_t tracks = 0;
-        if (!Count(cursor, tracks, 8192)) return 3;
-        min_tracks = std::min(min_tracks, tracks);
-        max_tracks = std::max(max_tracks, tracks);
-        for (std::int32_t track = 0; track < tracks; ++track) {
-            if (!ReadTrackDescriptor(cursor, requested, track == 0)) return 3;
+    const hp2::HP2AnimationData animation = hp2::LoadNamedHP2Animation(
+        argv[1], argv[2], argv[3]
+    );
+    const hp2::SkeletalMeshSkinningData skinning = hp2::LoadNamedSkeletalMeshSkinning(
+        argv[1], argv[2], "skhp2_genmale1Mesh"
+    );
+    std::vector<std::vector<hp2::CpuSkinInfluence>> influences;
+    std::string influence_error;
+    const bool influences_valid = hp2::BuildCpuSkinInfluences(
+        skinning, influences, &influence_error
+    );
+
+    bool skeleton_matches = animation.valid && skinning.valid
+        && animation.bones.size() == skinning.bones.size();
+    if (skeleton_matches) {
+        for (std::size_t index = 0; index < animation.bones.size(); ++index) {
+            if (Lowercase(animation.bones[index].name) != Lowercase(skinning.bones[index].name)
+                || animation.bones[index].parent_index != skinning.bones[index].parent_index) {
+                skeleton_matches = false;
+                break;
+            }
         }
     }
 
-    std::int32_t sequences = 0;
-    if (!Count(cursor, sequences, 4096)) return 3;
-    for (std::int32_t i = 0; i < sequences; ++i) {
-        if (!ReadSequence(cursor)) return 3;
-    }
-
-    std::int32_t master_q = 0;
-    if (!Count(cursor, master_q) || static_cast<std::size_t>(master_q) != requested.quat_is_root.size()) return 3;
-    double quat_norm_min = std::numeric_limits<double>::infinity();
-    double quat_norm_max = 0.0;
-    std::uint64_t quat_xyz_overflow = 0;
-    for (std::int32_t i = 0; i < master_q; ++i) {
-        std::int16_t rx = 0, ry = 0, rz = 0;
-        if (!cursor.I16(rx) || !cursor.I16(ry) || !cursor.I16(rz)) return 3;
-        const double x = std::sin(static_cast<double>(rx) * kAngleScale);
-        const double y = -std::sin(static_cast<double>(ry) * kAngleScale);
-        const double z = std::sin(static_cast<double>(rz) * kAngleScale);
-        const double xyz2 = x*x + y*y + z*z;
-        if (xyz2 > 1.000001) ++quat_xyz_overflow;
-        double w = std::sqrt(std::max(0.0, 1.0 - xyz2));
-        if (!requested.quat_is_root[static_cast<std::size_t>(i)]) w = -w;
-        const double norm = std::sqrt(x*x + y*y + z*z + w*w);
-        quat_norm_min = std::min(quat_norm_min, norm);
-        quat_norm_max = std::max(quat_norm_max, norm);
-    }
-
-    std::int32_t master_p = 0;
-    if (!Count(cursor, master_p) || static_cast<std::size_t>(master_p) != requested.position_scales.size()) return 3;
-    double position_abs_max = 0.0;
-    for (std::int32_t i = 0; i < master_p; ++i) {
-        std::int16_t rx = 0, ry = 0, rz = 0;
-        if (!cursor.I16(rx) || !cursor.I16(ry) || !cursor.I16(rz)) return 3;
-        const double factor = static_cast<double>(requested.position_scales[static_cast<std::size_t>(i)]) / 32767.0;
-        position_abs_max = std::max(position_abs_max, std::fabs(static_cast<double>(rx) * factor));
-        position_abs_max = std::max(position_abs_max, std::fabs(static_cast<double>(ry) * factor));
-        position_abs_max = std::max(position_abs_max, std::fabs(static_cast<double>(rz) * factor));
-    }
-
-    std::int32_t master_t = 0;
-    if (!Count(cursor, master_t)) return 3;
-    std::vector<std::uint8_t> deltas;
-    deltas.reserve(static_cast<std::size_t>(master_t));
-    for (std::int32_t i = 0; i < master_t; ++i) {
-        std::uint8_t value = 0;
-        if (!cursor.U8(value)) return 3;
-        deltas.push_back(value);
-    }
-    std::size_t delta_cursor = 0;
-    std::uint32_t max_track_delta_time = 0;
-    for (const std::int32_t count : requested.delta_counts) {
-        std::uint32_t current = 0;
-        for (std::int32_t i = 0; i < count; ++i) {
-            if (delta_cursor >= deltas.size()) return 3;
-            current += deltas[delta_cursor++];
+    double bind_squared = 0.0;
+    float bind_max = std::numeric_limits<float>::infinity();
+    bool bind_valid = false;
+    if (influences_valid) {
+        const auto local = hp2::MakeReferenceLocalPose(skinning.bones);
+        std::vector<hp2::BoneTransform> model;
+        std::string pose_error;
+        if (hp2::BuildModelSpacePose(skinning.bones, local, model, &pose_error)) {
+            const auto points = hp2::CpuSkinPoints(influences, model);
+            if (points.size() == skinning.reference_points.size() && !points.empty()) {
+                bind_max = 0.0f;
+                for (std::size_t index = 0; index < points.size(); ++index) {
+                    const float x = points[index].x - skinning.reference_points[index].x;
+                    const float y = points[index].y - skinning.reference_points[index].y;
+                    const float z = points[index].z - skinning.reference_points[index].z;
+                    const float distance = std::sqrt(x * x + y * y + z * z);
+                    bind_max = std::max(bind_max, distance);
+                    bind_squared += static_cast<double>(distance) * distance;
+                }
+                bind_valid = std::isfinite(bind_max) && bind_max <= 0.01f;
+            }
         }
-        max_track_delta_time = std::max(max_track_delta_time, current);
+    }
+    const double bind_rms = bind_valid
+        ? std::sqrt(bind_squared / static_cast<double>(skinning.reference_points.size())) : 0.0;
+
+    std::size_t stable_moves = 0u;
+    float maximum_deformation = 0.0f;
+    std::string first_stable_sequence;
+    if (animation.valid && influences_valid && skeleton_matches) {
+        for (std::size_t move_index = 0; move_index < animation.moves.size(); ++move_index) {
+            const float duration = hp2::AnimationMoveDuration(animation.moves[move_index]);
+            if (duration <= 0.0f || !std::isfinite(duration)) continue;
+            std::vector<hp2::Vec3> points;
+            std::string sample_error;
+            if (!hp2::SampleAnimationMovePoints(
+                    skinning, animation, move_index, duration * 0.5f, influences,
+                    points, &sample_error
+                )) {
+                continue;
+            }
+            const float deformation = DeformationScore(skinning.reference_points, points);
+            if (deformation < 0.0f) continue;
+            ++stable_moves;
+            maximum_deformation = std::max(maximum_deformation, deformation);
+            if (first_stable_sequence.empty() && move_index < animation.sequences.size()) {
+                first_stable_sequence = animation.sequences[move_index].name;
+            }
+        }
     }
 
-    const bool pools_match = requested.quats == static_cast<std::uint64_t>(master_q)
-        && requested.positions == static_cast<std::uint64_t>(master_p)
-        && requested.deltas == static_cast<std::uint64_t>(master_t)
-        && delta_cursor == deltas.size();
-    const bool closes = cursor.Remaining() == 0u;
-    const bool semantic_ok = requested.shape_mismatches == 0u
-        && std::isfinite(quat_norm_min) && quat_norm_min >= 0.999
-        && quat_norm_max <= 1.001;
+    std::size_t minimum_tracks = animation.moves.empty()
+        ? 0u : std::numeric_limits<std::size_t>::max();
+    std::size_t maximum_tracks = 0u;
+    for (const hp2::HP2AnimationMove& move : animation.moves) {
+        minimum_tracks = std::min(minimum_tracks, move.tracks.size());
+        maximum_tracks = std::max(maximum_tracks, move.tracks.size());
+    }
+    const bool runtime_ok = animation.valid && influences_valid && skeleton_matches
+        && bind_valid && stable_moves > 0u && maximum_deformation > 0.002f;
+    const std::string error = !animation.valid ? animation.error
+        : !influences_valid ? influence_error
+        : !skeleton_matches ? "mesh and animation skeletons differ"
+        : !bind_valid ? "reference-pose skinning mismatch"
+        : stable_moves == 0u ? "no stable animation move" : std::string{};
 
     std::cout << "{\n"
-              << "  \"schema\":\"hp2-animation-decoded-keys-v2\",\n"
-              << "  \"file_version\":" << package.summary.file_version << ",\n"
-              << "  \"licensee_version\":" << package.summary.licensee_version << ",\n"
-              << "  \"native_bytes\":" << bytes.size() << ",\n"
-              << "  \"bones\":" << bones << ",\n"
-              << "  \"moves\":" << moves << ",\n"
-              << "  \"sequences\":" << sequences << ",\n"
-              << "  \"tracks\":" << requested.tracks << ",\n"
-              << "  \"track_min\":" << (min_tracks == std::numeric_limits<std::int32_t>::max() ? 0 : min_tracks) << ",\n"
-              << "  \"track_max\":" << max_tracks << ",\n"
-              << "  \"master_quaternions\":" << master_q << ",\n"
-              << "  \"master_positions\":" << master_p << ",\n"
-              << "  \"master_deltas\":" << master_t << ",\n"
-              << "  \"descriptor_shape_mismatches\":" << requested.shape_mismatches << ",\n"
-              << "  \"quat_xyz_overflow\":" << quat_xyz_overflow << ",\n"
-              << "  \"quat_norm_min\":" << quat_norm_min << ",\n"
-              << "  \"quat_norm_max\":" << quat_norm_max << ",\n"
-              << "  \"position_abs_max\":" << position_abs_max << ",\n"
-              << "  \"max_track_delta_time\":" << max_track_delta_time << ",\n"
-              << "  \"pools_match\":" << (pools_match ? "true" : "false") << ",\n"
-              << "  \"remaining_bytes\":" << cursor.Remaining() << ",\n"
-              << "  \"closes\":" << (closes ? "true" : "false") << ",\n"
-              << "  \"semantic_ok\":" << (semantic_ok ? "true" : "false") << "\n"
+              << "  \"schema\":\"hp2-animation-runtime-v1\",\n"
+              << "  \"valid\":" << (runtime_ok ? "true" : "false") << ",\n"
+              << "  \"error\":\"" << JsonEscape(error) << "\",\n"
+              << "  \"file_version\":" << animation.file_version << ",\n"
+              << "  \"package\":\"" << JsonEscape(animation.package_name) << "\",\n"
+              << "  \"object\":\"" << JsonEscape(animation.object_name) << "\",\n"
+              << "  \"bones\":" << animation.bones.size() << ",\n"
+              << "  \"moves\":" << animation.moves.size() << ",\n"
+              << "  \"sequences\":" << animation.sequences.size() << ",\n"
+              << "  \"tracks\":" << animation.total_track_count << ",\n"
+              << "  \"track_min\":" << minimum_tracks << ",\n"
+              << "  \"track_max\":" << maximum_tracks << ",\n"
+              << "  \"master_quaternions\":" << animation.master_quaternion_count << ",\n"
+              << "  \"master_positions\":" << animation.master_position_count << ",\n"
+              << "  \"master_deltas\":" << animation.master_delta_count << ",\n"
+              << "  \"remaining_bytes\":" << animation.remaining_bytes << ",\n"
+              << "  \"mesh_points\":" << skinning.reference_points.size() << ",\n"
+              << "  \"mesh_bones\":" << skinning.bones.size() << ",\n"
+              << "  \"animation_reference\":" << skinning.animation_reference << ",\n"
+              << "  \"animation_reference_object\":\""
+              << JsonEscape(skinning.animation_object_name) << "\",\n"
+              << "  \"influence_slots\":" << skinning.weight_words.size() << ",\n"
+              << "  \"skeleton_matches\":" << (skeleton_matches ? "true" : "false") << ",\n"
+              << "  \"bind_valid\":" << (bind_valid ? "true" : "false") << ",\n"
+              << "  \"bind_rms\":" << bind_rms << ",\n"
+              << "  \"bind_max\":" << (std::isfinite(bind_max) ? bind_max : 0.0f) << ",\n"
+              << "  \"stable_moves\":" << stable_moves << ",\n"
+              << "  \"max_deformation\":" << maximum_deformation << ",\n"
+              << "  \"first_stable_sequence\":\""
+              << JsonEscape(first_stable_sequence) << "\"\n"
               << "}\n";
-    return pools_match && closes && semantic_ok ? 0 : 5;
+    return runtime_ok ? 0 : 5;
 }

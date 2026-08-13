@@ -12,11 +12,6 @@
 
 namespace {
 
-void AppendU16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
-    bytes.push_back(static_cast<std::uint8_t>(value & 0xffu));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 8u) & 0xffu));
-}
-
 void AppendU32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     for (std::size_t index = 0; index < 4; ++index) {
         bytes.push_back(static_cast<std::uint8_t>((value >> (index * 8u)) & 0xffu));

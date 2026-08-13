@@ -47,6 +47,7 @@ struct HP2AnimationTrack {
     std::uint32_t flags = 0;
     float position_scale = 0.0f;
     float time_scale = 0.0f;
+    std::size_t delta_count = 0;
     AnimationBoneTrack keys;
 };
 
@@ -108,6 +109,40 @@ std::vector<Vec3> CpuSkinPoints(
     const std::vector<std::vector<CpuSkinInfluence>>& influences,
     const std::vector<BoneTransform>& model_pose
 );
+
+bool BuildCpuSkinInfluences(
+    const SkeletalMeshSkinningData& skinning,
+    std::vector<std::vector<CpuSkinInfluence>>& influences,
+    std::string* error = nullptr
+);
+
+float AnimationMoveDuration(const HP2AnimationMove& move);
+
+bool SampleAnimationMovePoints(
+    const SkeletalMeshSkinningData& skinning,
+    const HP2AnimationData& animation,
+    std::size_t move_index,
+    float time,
+    const std::vector<std::vector<CpuSkinInfluence>>& influences,
+    std::vector<Vec3>& points,
+    std::string* error = nullptr
+);
+
+Quaternion DecodeHP2PackedQuaternion(
+    std::int16_t raw_x,
+    std::int16_t raw_y,
+    std::int16_t raw_z,
+    bool root_track
+);
+
+Vec3 DecodeHP2PackedPosition(
+    std::int16_t raw_x,
+    std::int16_t raw_y,
+    std::int16_t raw_z,
+    float position_scale
+);
+
+std::vector<float> DecodeHP2KeyDeltas(const std::vector<std::uint8_t>& deltas);
 
 HP2AnimationData LoadHP2AnimationExport(
     const PackageIndex& package,

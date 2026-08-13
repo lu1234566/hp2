@@ -174,7 +174,8 @@ std::vector<BoneTransform> MakeReferenceLocalPose(
     for (const auto& bone : bones) {
         result.push_back({
             NormalizeQuaternion({
-                bone.orientation[0], bone.orientation[1], bone.orientation[2], bone.orientation[3]
+                -bone.orientation[0], -bone.orientation[1], -bone.orientation[2],
+                bone.orientation[3]
             }),
             bone.position,
         });
@@ -257,6 +258,156 @@ std::vector<Vec3> CpuSkinPoints(
         }
     }
     return result;
+}
+
+bool BuildCpuSkinInfluences(
+    const SkeletalMeshSkinningData& skinning,
+    std::vector<std::vector<CpuSkinInfluence>>& influences,
+    std::string* error
+) {
+    influences.clear();
+    auto fail = [&](const char* message) {
+        if (error) *error = message;
+        return false;
+    };
+    if (!skinning.valid) return fail("skeletal skinning stream is invalid");
+    if (skinning.reference_points.empty() || skinning.bones.empty()) {
+        return fail("skeletal skinning stream has no points or bones");
+    }
+    if (skinning.weight_indices.size() != skinning.bones.size()) {
+        return fail("weight-index record count does not match bone count");
+    }
+    if (skinning.weight_words.size() != skinning.local_points.size()) {
+        return fail("weight words and local points do not have matching slots");
+    }
+
+    influences.resize(skinning.reference_points.size());
+    std::vector<std::uint8_t> claimed(skinning.weight_words.size(), 0u);
+    for (std::size_t bone_index = 0; bone_index < skinning.weight_indices.size(); ++bone_index) {
+        const SkeletalWeightIndexRecord& record = skinning.weight_indices[bone_index];
+        if (record.second != 0u) {
+            influences.clear();
+            return fail("unsupported nonzero second weight-index word");
+        }
+        const std::size_t first_slot = static_cast<std::size_t>(record.first & 0xffffu);
+        const std::size_t slot_count = static_cast<std::size_t>(record.first >> 16u);
+        if (first_slot > skinning.weight_words.size()
+            || slot_count > skinning.weight_words.size() - first_slot) {
+            influences.clear();
+            return fail("packed weight-index range is outside the influence slots");
+        }
+        for (std::size_t offset = 0; offset < slot_count; ++offset) {
+            const std::size_t slot = first_slot + offset;
+            if (claimed[slot] != 0u) {
+                influences.clear();
+                return fail("packed weight-index ranges overlap");
+            }
+            claimed[slot] = 1u;
+            const std::uint32_t packed = skinning.weight_words[slot].raw;
+            const std::size_t point_index = static_cast<std::size_t>(packed & 0xffffu);
+            const std::uint32_t raw_weight = packed >> 16u;
+            if (point_index >= influences.size() || raw_weight == 0u) {
+                influences.clear();
+                return fail("packed influence has an invalid point index or zero weight");
+            }
+            influences[point_index].push_back({
+                bone_index,
+                static_cast<float>(raw_weight) / 65535.0f,
+                skinning.local_points[slot],
+            });
+        }
+    }
+    if (std::find(claimed.begin(), claimed.end(), 0u) != claimed.end()) {
+        influences.clear();
+        return fail("packed weight-index ranges leave unused influence slots");
+    }
+    for (const auto& point_influences : influences) {
+        if (point_influences.empty()) {
+            influences.clear();
+            return fail("reference point has no skeletal influence");
+        }
+    }
+    if (error) error->clear();
+    return true;
+}
+
+float AnimationMoveDuration(const HP2AnimationMove& move) {
+    float duration = std::isfinite(move.track_time) && move.track_time > 0.0f
+        ? move.track_time : 0.0f;
+    for (const HP2AnimationTrack& track : move.tracks) {
+        if (!track.keys.rotations.empty()) {
+            duration = std::max(duration, track.keys.rotations.back().time);
+        }
+        if (!track.keys.positions.empty()) {
+            duration = std::max(duration, track.keys.positions.back().time);
+        }
+    }
+    return std::isfinite(duration) ? duration : 0.0f;
+}
+
+bool SampleAnimationMovePoints(
+    const SkeletalMeshSkinningData& skinning,
+    const HP2AnimationData& animation,
+    std::size_t move_index,
+    float time,
+    const std::vector<std::vector<CpuSkinInfluence>>& influences,
+    std::vector<Vec3>& points,
+    std::string* error
+) {
+    points.clear();
+    auto fail = [&](const char* message) {
+        if (error) *error = message;
+        return false;
+    };
+    if (!skinning.valid || !animation.valid) {
+        return fail("skeletal mesh or animation stream is invalid");
+    }
+    if (move_index >= animation.moves.size()) {
+        return fail("animation move index is outside the move table");
+    }
+    if (skinning.bones.size() != animation.bones.size()) {
+        return fail("animation and mesh skeletons have different bone counts");
+    }
+    if (influences.size() != skinning.reference_points.size()) {
+        return fail("CPU influence table does not match the reference-point count");
+    }
+
+    const HP2AnimationMove& move = animation.moves[move_index];
+    std::vector<BoneTransform> local_pose = MakeReferenceLocalPose(skinning.bones);
+    for (std::size_t track_index = 0; track_index < move.tracks.size(); ++track_index) {
+        std::int32_t bone_index = move.start_bone + static_cast<std::int32_t>(track_index);
+        if (track_index < move.bone_indices.size()) {
+            bone_index = move.bone_indices[track_index];
+        }
+        if (bone_index < 0 || static_cast<std::size_t>(bone_index) >= local_pose.size()) {
+            return fail("animation track maps outside the mesh skeleton");
+        }
+        local_pose[static_cast<std::size_t>(bone_index)] = SampleBoneTrack(
+            move.tracks[track_index].keys,
+            std::isfinite(time) ? std::max(time, 0.0f) : 0.0f,
+            local_pose[static_cast<std::size_t>(bone_index)]
+        );
+    }
+
+    std::vector<BoneTransform> model_pose;
+    std::string pose_error;
+    if (!BuildModelSpacePose(skinning.bones, local_pose, model_pose, &pose_error)) {
+        if (error) *error = pose_error;
+        return false;
+    }
+    points = CpuSkinPoints(influences, model_pose);
+    if (points.size() != skinning.reference_points.size()) {
+        points.clear();
+        return fail("CPU skinning produced an unexpected point count");
+    }
+    for (const Vec3& point : points) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            points.clear();
+            return fail("CPU skinning produced a non-finite point");
+        }
+    }
+    if (error) error->clear();
+    return true;
 }
 
 }  // namespace hp2
