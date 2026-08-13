@@ -59,6 +59,7 @@ jobs:
           grep -Fq '"${PORTCORE_ROOT}/ue_actor.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq '"${PORTCORE_ROOT}/ue_mesh.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq '"${PORTCORE_ROOT}/ue_skeletal.cpp"' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '"${PORTCORE_ROOT}/ue_animation.cpp"' android/app/src/main/cpp/CMakeLists.txt
           grep -Fq 'LoadSurfaceTextures' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'BuildVisibilityLightMapAtlas' android/app/src/main/cpp/platform/android_main.cpp
           grep -Fq 'LoadLevelActorCensus' android/app/src/main/cpp/platform/android_main.cpp
@@ -70,7 +71,7 @@ jobs:
           grep -Fiq 'e853843728a61a4ffb5b6fa1141af5a74d9114039eac6daec53fde64b58d1e2d' "$RUNNER_TEMP/apk-signing.txt"
       - uses: actions/upload-artifact@v7
         with:
-          name: HP2-Mobile-G5c2-dev-debug
+          name: HP2-Mobile-G5d-probe-dev-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
