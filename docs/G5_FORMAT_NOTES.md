@@ -39,9 +39,9 @@ The two direct references establish the exact first formats needed by G5a:
 
 The bounded reader shares the serialized `UMesh` prefix, then handles legacy
 triangle records, `LodMesh` faces/wedges/material slots and the `SkeletalMesh`
-reference-point and bone tables. It does not yet evaluate animation sequences
-or skin weights. For this checkpoint, skeletal points are rendered in their
-stored reference pose.
+reference-point and bone tables. At the G5a checkpoint it did not yet evaluate
+animation sequences or skin weights, so skeletal points were rendered in their
+stored reference pose. G5d extends that path as described below.
 
 The private probe decoded both assets with zero mesh failures. The duelist has
 291 reference points, 616 triangles, three declared texture slots and 135 bone
@@ -198,6 +198,12 @@ previous standalone duplicate parser has been removed. Synthetic tests cover
 pool closure, root/non-root quaternion signs, scaled key times, the packed
 influence layout and bind-pose reconstruction.
 
+The 2026-08-13 metadata-only runtime probe passed against the owner's original
+media. It matched all 135 animation bones to the mesh, reconstructed the bind
+pose with RMS error `7.23819e-06` and maximum error `1.63243e-05`, and sampled
+all 68 moves without a non-finite or unbounded frame. The largest normalized
+deformation was `0.595383`; the first accepted sequence was `talk_rhand`.
+
 On Android, the mesh path preserves each emitted triangle's source-point
 indices. The renderer selects a finite, bounded sequence with visible
 deformation, skins the 291 points on the CPU, reapplies the validated mesh and
@@ -206,6 +212,7 @@ actor transforms, and updates only the dedicated duelist-focus VBO range with
 room, the G5c2 object view, a static duelist bind pose and the moving duelist.
 Unstable sampled bounds fall back to the bind pose and emit a diagnostic log.
 
-G5 remains open until a real character is skinned and animated. Camera,
-collision and scripted gameplay remain G6 work and are intentionally not mixed
-into this checkpoint.
+The real-data semantic path is therefore validated, but G5 remains open until
+the moving character is captured and visually inspected on the Galaxy A57.
+Camera, collision and scripted gameplay remain G6 work and are intentionally
+not mixed into this checkpoint.

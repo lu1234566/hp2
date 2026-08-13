@@ -27,8 +27,10 @@ capture exposed 24 inherited human meshes with an impossible `DrawScale` of
 Galaxy A57 capture is a visual **PASS**. G5d is now the active checkpoint. It
 decodes the real compressed `skGenMaleAnims` payload, reconstructs the duelist
 bind pose from 505 proven influence slots, samples a stable moving sequence on
-the CPU and updates a dedicated GLES diagnostic VBO. The implementation remains
-a candidate until the moving focus view is captured on the A57.
+the CPU and updates a dedicated GLES diagnostic VBO. A metadata-only run over
+the original media passed all 68 moves and the 135-bone bind validation. The
+implementation remains a candidate until the moving focus view is captured on
+the A57.
 No original asset is included in Git or the APK.
 
 The current foundation provides:
@@ -219,7 +221,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
 | G4 | Lightmaps and recognizable room | PASS — visibly confirmed on Galaxy A57 |
-| G5 | Actors, meshes and animation | IN PROGRESS — G5c2 visual PASS; G5d moving-character candidate |
+| G5 | Actors, meshes and animation | IN PROGRESS — G5c2 visual PASS; G5d real-data semantic PASS, A57 visual pending |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
 | G8 | Android performance and full controller validation | Pending |
