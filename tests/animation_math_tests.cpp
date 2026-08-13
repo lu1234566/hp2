@@ -158,12 +158,19 @@ int main() {
     skinning.bones[0].orientation = {0.0f, 0.0f, Z90().z, Z90().w};
     skinning.bones[0].position = {10.0f, 0.0f, 0.0f};
     skinning.bones[0].parent_index = -1;
-    skinning.weight_indices = {{1u << 16u, 0u}};
-    skinning.weight_words = {{0xffff0000u, 0.0f, true}};
-    skinning.local_points = {{0.0f, 1.0f, 0.0f}};
+    skinning.weight_indices = {{2u << 16u, 0u}};
+    skinning.weight_words = {
+        {0x00000000u, 0.0f, true},
+        {0xffff0000u, 0.0f, true},
+    };
+    skinning.local_points = {
+        {99.0f, 99.0f, 99.0f},
+        {0.0f, 1.0f, 0.0f},
+    };
     std::vector<std::vector<hp2::CpuSkinInfluence>> packed_influences;
     std::string influence_error;
-    if (!hp2::BuildCpuSkinInfluences(skinning, packed_influences, &influence_error)) return 5;
+    if (!hp2::BuildCpuSkinInfluences(skinning, packed_influences, &influence_error)
+        || packed_influences.size() != 1u || packed_influences[0].size() != 1u) return 5;
     const auto reference_local = hp2::MakeReferenceLocalPose(skinning.bones);
     std::vector<hp2::BoneTransform> reference_model;
     if (!hp2::BuildModelSpacePose(skinning.bones, reference_local, reference_model)) return 6;

@@ -306,10 +306,11 @@ bool BuildCpuSkinInfluences(
             const std::uint32_t packed = skinning.weight_words[slot].raw;
             const std::size_t point_index = static_cast<std::size_t>(packed & 0xffffu);
             const std::uint32_t raw_weight = packed >> 16u;
-            if (point_index >= influences.size() || raw_weight == 0u) {
+            if (point_index >= influences.size()) {
                 influences.clear();
-                return fail("packed influence has an invalid point index or zero weight");
+                return fail("packed influence has an invalid point index");
             }
+            if (raw_weight == 0u) continue;
             influences[point_index].push_back({
                 bone_index,
                 static_cast<float>(raw_weight) / 65535.0f,
