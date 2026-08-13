@@ -11,7 +11,9 @@ on:
       - "src/portcore/**"
       - "tools/hp2_probe.cpp"
       - "tools/hp2_map_probe.cpp"
+      - "tools/hp2_skeletal_probe.cpp"
       - "tests/portcore_tests.cpp"
+      - "tests/skeletal_probe_tests.cpp"
 
 permissions:
   contents: read
