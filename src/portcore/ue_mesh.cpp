@@ -454,6 +454,14 @@ Vec3 TransformActorVertex(
 
 }  // namespace
 
+Vec3 TransformActorMeshVertex(
+    const Vec3& vertex,
+    const DecodedVertexMesh& mesh,
+    const ActorInstance& actor
+) {
+    return TransformActorVertex(vertex, mesh, actor);
+}
+
 DecodedVertexMesh LoadVertexMeshExport(
     const PackageIndex& package,
     std::size_t export_index
@@ -1107,15 +1115,17 @@ ActorMeshScene LoadDirectActorMeshes(
         instance.has_draw_scale_3d = effective_actor.has_draw_scale_3d;
         instance.draw_scale_3d = effective_actor.draw_scale_3d;
         instance.source_triangles = mesh.triangles.size();
+        const std::size_t first_placed_triangle = result.triangles.size();
         for (const VertexMeshTriangle& triangle : mesh.triangles) {
             if (result.triangles.size() >= max_triangles) {
                 break;
             }
             ActorMeshTriangle placed;
             for (std::size_t corner = 0; corner < 3; ++corner) {
-                placed.points[corner] = TransformActorVertex(
+                placed.points[corner] = TransformActorMeshVertex(
                     mesh.vertices[triangle.indices[corner]], mesh, effective_actor
                 );
+                placed.source_point_indices[corner] = triangle.indices[corner];
                 placed.texture_coordinates[corner] = triangle.texture_coordinates[corner];
                 const Vec3& point = placed.points[corner];
                 if (!instance.bounds_valid) {
@@ -1150,6 +1160,15 @@ ActorMeshScene LoadDirectActorMeshes(
             result.textured_triangles += placed.material_index >= 0 ? 1u : 0u;
             result.triangles.push_back(placed);
             ++instance.emitted_triangles;
+        }
+        if (!result.animation_source.valid && instance.emitted_triangles > 0u
+            && Lowercase(actor.object_name) == "duellist0"
+            && Lowercase(mesh.class_name) == "skeletalmesh") {
+            result.animation_source.valid = true;
+            result.animation_source.first_triangle = first_placed_triangle;
+            result.animation_source.triangle_count = instance.emitted_triangles;
+            result.animation_source.mesh = mesh;
+            result.animation_source.actor = effective_actor;
         }
         result.instances.push_back(std::move(instance));
     }

@@ -20,15 +20,20 @@ mesh properties, decodes directly referenced UE1 `Mesh`, `LodMesh` and
 `SkeletalMesh` reference-pose geometry, and places the first duelist in the
 BSP world. A Galaxy A57 capture then confirmed the enlarged G5b duelist with
 coherent reference-pose geometry, UVs and original textures, closing that
-visual checkpoint without requiring a controller. G5c now resolves decoration
-meshes and transform defaults inherited from imported UE1 classes. Its device
-diagnostic alternates automatically between the complete room and an
-actor/object-only view; controller **A** remains an optional manual override.
-The first G5c capture exposed 24 inherited human meshes with an impossible
-`DrawScale` of `200.0`, producing torn giant fragments. G5c2 rejects only that
-extreme inherited value, falls back to `1.0`, and records the recovery in the
-private metadata report; direct actor scales remain untouched. The corrected
-automatic capture is the current acceptance test.
+visual checkpoint without requiring a controller. G5c resolves decoration
+meshes and transform defaults inherited from imported UE1 classes. Its first
+capture exposed 24 inherited human meshes with an impossible `DrawScale` of
+`200.0`; G5c2 rejects only that provisional inherited value, and the corrected
+Galaxy A57 capture is a visual **PASS**. G5d is now the active checkpoint. It
+decodes the real compressed `skGenMaleAnims` payload, reconstructs the duelist
+bind pose from 505 proven influence slots, samples a moving sequence on the CPU
+and updates a dedicated GLES diagnostic VBO. The first A57 capture confirmed
+the static bind pose but rejected the moving view: the student became
+horizontal and stretched. A follow-up convention sweep identified an inverted
+Y component in both packed rotations and positions. The corrected build also
+selects `talk_rhand` deterministically and rejects any diagnostic frame that
+loses the reference pose's upright axis. G5d remains open until that correction
+passes a second A57 capture.
 No original asset is included in Git or the APK.
 
 The current foundation provides:
@@ -56,6 +61,8 @@ The current foundation provides:
   actor transforms and original mesh-material resolution;
 - a bounded, cached UE1 `UClass` default-property tail reader for inherited
   decoration meshes, pivots, scales and hidden state;
+- bounded HP2 `Animation` master-pool decoding, reference-pose validation and
+  CPU skinning with a dynamic GLES duelist diagnostic;
 - GitHub Actions builds, so Google Colab is not part of the workflow.
 
 The runtime diagnostic screen uses four bars, from left to right:
@@ -150,8 +157,9 @@ logs and a jar, as well as character classes. In total, the actor/object path
 produced 32,595 triangles; 21,219 use 41 decoded original materials, with zero
 material failures. Only these names and aggregate counts left the ephemeral
 runner. The first device capture then failed because 24 inherited character
-scales were decoded as `200.0`; G5c2 rejects that extreme inherited value and
-is awaiting the corrected automatic device capture.
+scales were decoded as `200.0`; G5c2 rejects that extreme inherited value, and
+the corrected automatic Galaxy A57 capture passed without giant character
+fragments.
 
 - [G1 report](docs/G1_ORIGINAL_DISC_REPORT.md)
 - [Metadata-only package catalog](docs/hp2-package-catalog.json)
@@ -163,7 +171,7 @@ is awaiting the corrected automatic device capture.
 ## Build without Colab
 
 Every push and pull request runs host tests and builds a debug APK in GitHub
-Actions. Download `HP2-Mobile-G5c2-dev-debug` from the workflow run's
+Actions. Download `HP2-Mobile-G5d-animation-fix-dev-debug` from the workflow run's
 **Artifacts** section.
 
 Development APKs from G3a onward use the checked-in, non-production development
@@ -216,7 +224,7 @@ Bindings remain provisional until original HP2 input actions are catalogued.
 | G2 | First real HP2 map geometry | PASS — rendered on Galaxy A57 |
 | G3 | UVs and real textures | PASS — visibly confirmed on Galaxy A57 |
 | G4 | Lightmaps and recognizable room | PASS — visibly confirmed on Galaxy A57 |
-| G5 | Actors, meshes and animation | IN PROGRESS — G5b visual PASS; G5c2 inherited-scale retest |
+| G5 | Actors, meshes and animation | IN PROGRESS — G5c2 visual PASS; G5d bind visual PASS, animation-fix retest pending |
 | G6 | Scripted gameplay, collision and camera | Pending |
 | G7 | Audio, saves and level transitions | Pending |
 | G8 | Android performance and full controller validation | Pending |

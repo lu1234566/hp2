@@ -9,6 +9,8 @@ add_library(hp2_portcore STATIC
     src/portcore/runtime.cpp
     src/portcore/ue_actor.cpp
     src/portcore/ue_animation.cpp
+    src/portcore/ue_animation_hp2.cpp
+    src/portcore/ue_animation_hp2_codec.cpp
     src/portcore/ue_lightmap.cpp
     src/portcore/ue_mesh.cpp
     src/portcore/ue_model.cpp
@@ -28,6 +30,9 @@ target_link_libraries(hp2_map_probe PRIVATE hp2_portcore)
 add_executable(hp2_skeletal_probe tools/hp2_skeletal_probe.cpp)
 target_link_libraries(hp2_skeletal_probe PRIVATE hp2_portcore)
 
+add_executable(hp2_animation_semantic_probe tools/hp2_animation_semantic_probe.cpp)
+target_link_libraries(hp2_animation_semantic_probe PRIVATE hp2_portcore)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(portcore_tests tests/portcore_tests.cpp)
@@ -37,4 +42,8 @@ if(BUILD_TESTING)
     add_executable(skeletal_probe_tests tests/skeletal_probe_tests.cpp)
     target_link_libraries(skeletal_probe_tests PRIVATE hp2_portcore)
     add_test(NAME skeletal_probe_tests COMMAND skeletal_probe_tests)
+
+    add_executable(animation_math_tests tests/animation_math_tests.cpp)
+    target_link_libraries(animation_math_tests PRIVATE hp2_portcore)
+    add_test(NAME animation_math_tests COMMAND animation_math_tests)
 endif()

@@ -44,8 +44,17 @@ struct ActorMeshMaterial {
 
 struct ActorMeshTriangle {
     std::array<Vec3, 3> points{};
+    std::array<std::uint32_t, 3> source_point_indices{};
     std::array<TextureCoordinate, 3> texture_coordinates{};
     std::int32_t material_index = -1;
+};
+
+struct ActorMeshAnimationSource {
+    bool valid = false;
+    std::size_t first_triangle = 0;
+    std::size_t triangle_count = 0;
+    DecodedVertexMesh mesh;
+    ActorInstance actor;
 };
 
 struct ActorMeshAssetSummary {
@@ -113,8 +122,15 @@ struct ActorMeshScene {
     std::vector<ActorMeshInstanceSummary> instances;
     std::vector<ActorMeshMaterial> materials;
     std::vector<ActorMeshTriangle> triangles;
+    ActorMeshAnimationSource animation_source;
     std::string error;
 };
+
+Vec3 TransformActorMeshVertex(
+    const Vec3& vertex,
+    const DecodedVertexMesh& mesh,
+    const ActorInstance& actor
+);
 
 DecodedVertexMesh LoadVertexMeshExport(
     const PackageIndex& package,

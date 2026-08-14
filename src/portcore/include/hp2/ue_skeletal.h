@@ -59,6 +59,8 @@ struct SkeletalMeshSkinningData {
     std::size_t nonfinite_weight_words = 0;
     std::uint32_t weight_index_first_max = 0;
     std::uint32_t weight_index_second_max = 0;
+    std::int32_t animation_reference = 0;
+    std::string animation_object_name;
     std::size_t remaining_bytes = 0;
     std::vector<SkeletalAnimationSequence> sequences;
     std::vector<Vec3> reference_points;

@@ -812,8 +812,10 @@ int main() {
                  "inherited class Mesh references should resolve and receive the actor transform");
     ok &= Expect(std::isfinite(actor_mesh_scene.triangles[0].points[0].x)
                      && actor_mesh_scene.assets[0].object_name == "ChairMesh"
-                     && actor_mesh_scene.assets[0].vertex_bounds_valid,
-                 "placed actor triangles and mesh asset summaries should remain bounded");
+                     && actor_mesh_scene.assets[0].vertex_bounds_valid
+                     && actor_mesh_scene.triangles[0].source_point_indices
+                         == decoded_mesh.triangles[0].indices,
+                 "placed actor triangles should retain bounded source-point mappings");
 
     const auto extreme_actor_package = hp2::LoadPackageIndex(
         root / "Maps" / "SyntheticActorsExtreme.unr"

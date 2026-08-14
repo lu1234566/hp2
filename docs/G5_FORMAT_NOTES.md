@@ -39,9 +39,9 @@ The two direct references establish the exact first formats needed by G5a:
 
 The bounded reader shares the serialized `UMesh` prefix, then handles legacy
 triangle records, `LodMesh` faces/wedges/material slots and the `SkeletalMesh`
-reference-point and bone tables. It does not yet evaluate animation sequences
-or skin weights. For this checkpoint, skeletal points are rendered in their
-stored reference pose.
+reference-point and bone tables. At the G5a checkpoint it did not yet evaluate
+animation sequences or skin weights, so skeletal points were rendered in their
+stored reference pose. G5d extends that path as described below.
 
 The private probe decoded both assets with zero mesh failures. The duelist has
 291 reference points, 616 triangles, three declared texture slots and 135 bone
@@ -164,13 +164,74 @@ transforms, individual index records or individual weights. A synthetic
 version-79 fixture validates complete consumption of a controlled skeletal
 stream before the original HP2 mesh is inspected.
 
-The first real G5d acceptance step is to reproduce the already established 291
-reference points and 135 bones for `HPModels.skhp2_genmale1Mesh`, consume its
-known skeletal stream coherently and use the aggregate weight statistics to
-identify the serialized influence layout. CPU/GLES skinning and the first
-moving character follow only after that layout is demonstrated rather than
-guessed.
+The private clean-room run established the influence layout without exporting
+any individual record. `BoneWeightIndices.first` packs the first slot in its
+low 16 bits and the slot count in its high 16 bits; the second word is zero.
+Each aligned `BoneWeights` word packs the reference-point index in its low 16
+bits and an unsigned weight in its high 16 bits, while the same slot in
+`LocalPoints` contains the bone-local point. The 135 per-bone ranges cover all
+505 slots exactly once. All 291 points have one to three influences, and their
+integer weight sums range from 65,533 through 65,535.
 
-G5 remains open until a real character is skinned and animated. Camera,
-collision and scripted gameplay remain G6 work and are intentionally not mixed
-into this checkpoint.
+Conjugating the stored XYZW reference orientation and composing
+`parent * local` reproduces all 291 reference points after CPU skinning. The
+private report measured an RMS error of about `4.1e-6` and a maximum error of
+about `8.2e-6`, so the runtime treats a larger bind mismatch as a hard failure
+rather than displaying a plausible but incorrect pose. The skeletal tail also
+resolves its object reference to `skGenMaleAnims` instead of relying solely on
+a hard-coded asset name.
+
+## G5d compressed animation and runtime diagnostic
+
+The linked version-79 `Animation` export contains 135 bone channels, 68 moves
+and 68 sequences. Every move has 135 track descriptors. The descriptors point
+sequentially into three master pools: 99,557 packed quaternion keys, 15,550
+packed position keys and 99,557 byte deltas. The pool requests close exactly,
+with no remaining native bytes. Packed positions use the per-track scale;
+packed quaternion XYZ components use the HP2 sine encoding and reconstructed W
+sign; accumulated byte deltas use the per-track time scale. A representative
+move has a duration near 2.03 seconds and 1/30-second key spacing.
+
+The shared PortCore parser now owns that format. The private probe calls the
+same loader, codec, hierarchy and skinning functions linked into Android; the
+previous standalone duplicate parser has been removed. Synthetic tests cover
+pool closure, root/non-root quaternion signs, scaled key times, the packed
+influence layout and bind-pose reconstruction.
+
+The 2026-08-13 metadata-only runtime probe passed against the owner's original
+media. It matched all 135 animation bones to the mesh, reconstructed the bind
+pose with RMS error `7.23819e-06` and maximum error `1.63243e-05`, and sampled
+all 68 moves without a non-finite or unbounded frame. The largest normalized
+deformation was `0.595383`; the first accepted sequence was `talk_rhand`.
+That first probe's bounds-only acceptance was too permissive: a horizontal,
+stretched body could still fit its finite extent limits.
+
+On Android, the mesh path preserves each emitted triangle's source-point
+indices. The renderer selects a finite, bounded sequence with visible
+deformation, skins the 291 points on the CPU, reapplies the validated mesh and
+actor transforms, and updates only the dedicated duelist-focus VBO range with
+`glBufferSubData`. The controller-free 20-second diagnostic cycles through the
+room, the G5c2 object view, a static duelist bind pose and the moving duelist.
+Unstable sampled bounds fall back to the bind pose and emit a diagnostic log.
+
+The first Galaxy A57 G5d capture confirmed the complete room, G5c2 object view
+and coherent upright bind pose, but the moving view was a visual **FAIL**: the
+student rotated nearly horizontal and its lower body stretched. The bind result
+isolates the fault to animation-key interpretation rather than skeletal weights
+or mesh placement.
+
+A metadata-only convention sweep compared track mappings, sine versus linear
+quaternion components, every XYZ sign mask and both reconstructed W signs. All
+7,155 supplied bone-map entries are identity entries. Direct track order and
+the sine codec match the reference skeleton; relative to the first decoder,
+the best quaternion and position masks both flipped Y only. The corrected codec
+therefore removes that Y inversion from packed rotations and positions while
+retaining negative reconstructed W for non-root tracks. The Android selector
+prefers the measured `talk_rhand` sequence, and a shared regression check now
+rejects finite poses that no longer preserve the bind pose's upright axis. The
+private probe must also confirm direct order, sine components, zero remaining
+sign mask and the expected W sign before reporting success.
+
+G5 remains open until the corrected moving character is captured and visually
+inspected on the Galaxy A57. Camera, collision and scripted gameplay remain G6
+work and are intentionally not mixed into this checkpoint.
