@@ -30,6 +30,52 @@ Vec3 Lerp(const Vec3& a, const Vec3& b, float alpha) {
     };
 }
 
+struct PointBounds {
+    bool valid = false;
+    Vec3 minimum;
+    Vec3 maximum;
+    Vec3 center;
+    float spans[3]{};
+    float extent = 0.0f;
+    std::size_t major_axis = 0u;
+};
+
+PointBounds MeasurePointBounds(const std::vector<Vec3>& points) {
+    PointBounds result;
+    for (const Vec3& point : points) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            return {};
+        }
+        if (!result.valid) {
+            result.minimum = point;
+            result.maximum = point;
+            result.valid = true;
+        } else {
+            result.minimum.x = std::min(result.minimum.x, point.x);
+            result.minimum.y = std::min(result.minimum.y, point.y);
+            result.minimum.z = std::min(result.minimum.z, point.z);
+            result.maximum.x = std::max(result.maximum.x, point.x);
+            result.maximum.y = std::max(result.maximum.y, point.y);
+            result.maximum.z = std::max(result.maximum.z, point.z);
+        }
+    }
+    if (!result.valid) return result;
+    result.center = {
+        (result.minimum.x + result.maximum.x) * 0.5f,
+        (result.minimum.y + result.maximum.y) * 0.5f,
+        (result.minimum.z + result.maximum.z) * 0.5f,
+    };
+    result.spans[0] = result.maximum.x - result.minimum.x;
+    result.spans[1] = result.maximum.y - result.minimum.y;
+    result.spans[2] = result.maximum.z - result.minimum.z;
+    result.major_axis = static_cast<std::size_t>(
+        std::distance(result.spans, std::max_element(result.spans, result.spans + 3))
+    );
+    result.extent = result.spans[result.major_axis];
+    result.valid = std::isfinite(result.extent) && result.extent > 0.0f;
+    return result;
+}
+
 template <typename Key>
 std::size_t UpperKeyIndex(const std::vector<Key>& keys, float time) {
     const auto it = std::upper_bound(
@@ -258,6 +304,55 @@ std::vector<Vec3> CpuSkinPoints(
         }
     }
     return result;
+}
+
+bool IsPlausibleDiagnosticPose(
+    const std::vector<Vec3>& reference,
+    const std::vector<Vec3>& candidate,
+    float* deformation_score
+) {
+    if (reference.size() != candidate.size() || reference.empty()) return false;
+    const PointBounds reference_bounds = MeasurePointBounds(reference);
+    const PointBounds candidate_bounds = MeasurePointBounds(candidate);
+    if (!reference_bounds.valid || !candidate_bounds.valid) return false;
+    const float extent_ratio = candidate_bounds.extent / reference_bounds.extent;
+    if (!std::isfinite(extent_ratio) || extent_ratio < 0.25f || extent_ratio > 4.0f) {
+        return false;
+    }
+    const std::size_t upright_axis = reference_bounds.major_axis;
+    if (candidate_bounds.spans[upright_axis]
+            < reference_bounds.spans[upright_axis] * 0.55f
+        || candidate_bounds.spans[upright_axis] < candidate_bounds.extent * 0.70f) {
+        return false;
+    }
+    const Vec3 center_delta = {
+        candidate_bounds.center.x - reference_bounds.center.x,
+        candidate_bounds.center.y - reference_bounds.center.y,
+        candidate_bounds.center.z - reference_bounds.center.z,
+    };
+    const float center_distance = std::sqrt(
+        center_delta.x * center_delta.x + center_delta.y * center_delta.y
+        + center_delta.z * center_delta.z
+    );
+    if (!std::isfinite(center_distance) || center_distance > reference_bounds.extent * 2.0f) {
+        return false;
+    }
+    double squared = 0.0;
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+        const double x = static_cast<double>(candidate[index].x - reference[index].x)
+            - center_delta.x;
+        const double y = static_cast<double>(candidate[index].y - reference[index].y)
+            - center_delta.y;
+        const double z = static_cast<double>(candidate[index].z - reference[index].z)
+            - center_delta.z;
+        squared += x * x + y * y + z * z;
+    }
+    const float score = static_cast<float>(
+        std::sqrt(squared / static_cast<double>(reference.size())) / reference_bounds.extent
+    );
+    if (!std::isfinite(score) || score > 2.0f) return false;
+    if (deformation_score) *deformation_score = score;
+    return true;
 }
 
 bool BuildCpuSkinInfluences(

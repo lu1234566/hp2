@@ -125,91 +125,6 @@ std::string Lowercase(std::string value) {
     return value;
 }
 
-struct PointBounds {
-    bool valid = false;
-    hp2::Vec3 minimum;
-    hp2::Vec3 maximum;
-    hp2::Vec3 center;
-    float extent = 0.0f;
-};
-
-PointBounds MeasurePoints(const std::vector<hp2::Vec3>& points) {
-    PointBounds result;
-    for (const hp2::Vec3& point : points) {
-        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-            return {};
-        }
-        if (!result.valid) {
-            result.minimum = point;
-            result.maximum = point;
-            result.valid = true;
-        } else {
-            result.minimum.x = std::min(result.minimum.x, point.x);
-            result.minimum.y = std::min(result.minimum.y, point.y);
-            result.minimum.z = std::min(result.minimum.z, point.z);
-            result.maximum.x = std::max(result.maximum.x, point.x);
-            result.maximum.y = std::max(result.maximum.y, point.y);
-            result.maximum.z = std::max(result.maximum.z, point.z);
-        }
-    }
-    if (!result.valid) return result;
-    result.center = {
-        (result.minimum.x + result.maximum.x) * 0.5f,
-        (result.minimum.y + result.maximum.y) * 0.5f,
-        (result.minimum.z + result.maximum.z) * 0.5f,
-    };
-    result.extent = std::max({
-        result.maximum.x - result.minimum.x,
-        result.maximum.y - result.minimum.y,
-        result.maximum.z - result.minimum.z,
-    });
-    result.valid = std::isfinite(result.extent) && result.extent > 0.0f;
-    return result;
-}
-
-bool StableAnimatedPose(
-    const std::vector<hp2::Vec3>& reference,
-    const std::vector<hp2::Vec3>& candidate,
-    float* deformation_score = nullptr
-) {
-    if (reference.size() != candidate.size() || reference.empty()) return false;
-    const PointBounds reference_bounds = MeasurePoints(reference);
-    const PointBounds candidate_bounds = MeasurePoints(candidate);
-    if (!reference_bounds.valid || !candidate_bounds.valid) return false;
-    const float extent_ratio = candidate_bounds.extent / reference_bounds.extent;
-    if (!std::isfinite(extent_ratio) || extent_ratio < 0.25f || extent_ratio > 4.0f) {
-        return false;
-    }
-    const hp2::Vec3 center_delta = {
-        candidate_bounds.center.x - reference_bounds.center.x,
-        candidate_bounds.center.y - reference_bounds.center.y,
-        candidate_bounds.center.z - reference_bounds.center.z,
-    };
-    const float center_distance = std::sqrt(
-        center_delta.x * center_delta.x + center_delta.y * center_delta.y
-        + center_delta.z * center_delta.z
-    );
-    if (!std::isfinite(center_distance) || center_distance > reference_bounds.extent * 2.0f) {
-        return false;
-    }
-    double squared = 0.0;
-    for (std::size_t index = 0; index < reference.size(); ++index) {
-        const double x = static_cast<double>(candidate[index].x - reference[index].x)
-            - center_delta.x;
-        const double y = static_cast<double>(candidate[index].y - reference[index].y)
-            - center_delta.y;
-        const double z = static_cast<double>(candidate[index].z - reference[index].z)
-            - center_delta.z;
-        squared += x * x + y * y + z * z;
-    }
-    const float score = static_cast<float>(
-        std::sqrt(squared / static_cast<double>(reference.size())) / reference_bounds.extent
-    );
-    if (!std::isfinite(score) || score > 2.0f) return false;
-    if (deformation_score) *deformation_score = score;
-    return true;
-}
-
 struct CpuActorAnimation {
     bool valid = false;
     hp2::ActorMeshAnimationSource source;
@@ -307,7 +222,9 @@ CpuActorAnimation LoadCpuActorAnimation(
                 break;
             }
             float deformation = 0.0f;
-            if (!StableAnimatedPose(result.skinning.reference_points, sampled, &deformation)) {
+            if (!hp2::IsPlausibleDiagnosticPose(
+                    result.skinning.reference_points, sampled, &deformation
+                )) {
                 stable = false;
                 break;
             }
@@ -317,11 +234,18 @@ CpuActorAnimation LoadCpuActorAnimation(
         const std::string name = move_index < result.animation.sequences.size()
             ? result.animation.sequences[move_index].name : std::string{};
         const std::string lower_name = Lowercase(name);
-        float preference = 1.0f;
-        if (lower_name.find("walk") != std::string::npos) preference = 2.0f;
+        float preference = 10.0f;
+        if (lower_name == "talk_rhand") preference = 100.0f;
+        else if (lower_name.find("talk") != std::string::npos) preference = 80.0f;
         else if (lower_name.find("idle") != std::string::npos
-                 || lower_name.find("stand") != std::string::npos) preference = 1.5f;
-        const float rank = best_deformation * preference;
+                 || lower_name.find("stand") != std::string::npos) preference = 60.0f;
+        else if (lower_name.find("walk") != std::string::npos) preference = 40.0f;
+        if (lower_name.find("death") != std::string::npos
+            || lower_name.find("fall") != std::string::npos
+            || lower_name.find("knock") != std::string::npos) {
+            preference = 0.0f;
+        }
+        const float rank = preference + std::min(best_deformation, 1.0f);
         if (rank > best_rank) {
             best_rank = rank;
             result.move_index = move_index;
@@ -1173,7 +1097,9 @@ void main() {
             if (hp2::SampleAnimationMovePoints(
                     animation_.skinning, animation_.animation, animation_.move_index,
                     sample_time, animation_.influences, sampled, &sample_error
-                ) && StableAnimatedPose(animation_.skinning.reference_points, sampled)) {
+                ) && hp2::IsPlausibleDiagnosticPose(
+                    animation_.skinning.reference_points, sampled
+                )) {
                 local_points = std::move(sampled);
             } else if (!animation_frame_rejected_) {
                 LOGE("G5d rejected unstable animation frame: %s", sample_error.c_str());

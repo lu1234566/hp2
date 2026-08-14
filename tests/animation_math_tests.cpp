@@ -150,6 +150,29 @@ int main() {
     const auto points = hp2::CpuSkinPoints(influences, pose);
     if (points.size() != 1 || !Near(points[0], {2.0f, 0.0f, 0.0f})) return 4;
 
+    const hp2::Quaternion packed_root = hp2::DecodeHP2PackedQuaternion(
+        0, 16384, 0, true
+    );
+    const hp2::Quaternion packed_child = hp2::DecodeHP2PackedQuaternion(
+        0, 16384, 0, false
+    );
+    const hp2::Vec3 packed_position = hp2::DecodeHP2PackedPosition(0, 16384, 0, 4.0f);
+    if (packed_root.y <= 0.0f || packed_root.w <= 0.0f
+        || packed_child.y <= 0.0f || packed_child.w >= 0.0f
+        || !Near(packed_position, {0.0f, 2.0f, 0.0f})) return 5;
+
+    const std::vector<hp2::Vec3> upright_reference{
+        {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 10.0f}
+    };
+    const std::vector<hp2::Vec3> sideways_candidate{
+        {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 1.0f}, {10.0f, 0.0f, 0.0f}
+    };
+    float upright_deformation = -1.0f;
+    if (!hp2::IsPlausibleDiagnosticPose(
+            upright_reference, upright_reference, &upright_deformation
+        ) || !Near(upright_deformation, 0.0f)
+        || hp2::IsPlausibleDiagnosticPose(upright_reference, sideways_candidate)) return 6;
+
     hp2::SkeletalMeshSkinningData skinning;
     skinning.valid = true;
     skinning.reference_points = {{11.0f, 0.0f, 0.0f}};
@@ -170,12 +193,12 @@ int main() {
     std::vector<std::vector<hp2::CpuSkinInfluence>> packed_influences;
     std::string influence_error;
     if (!hp2::BuildCpuSkinInfluences(skinning, packed_influences, &influence_error)
-        || packed_influences.size() != 1u || packed_influences[0].size() != 1u) return 5;
+        || packed_influences.size() != 1u || packed_influences[0].size() != 1u) return 7;
     const auto reference_local = hp2::MakeReferenceLocalPose(skinning.bones);
     std::vector<hp2::BoneTransform> reference_model;
-    if (!hp2::BuildModelSpacePose(skinning.bones, reference_local, reference_model)) return 6;
+    if (!hp2::BuildModelSpacePose(skinning.bones, reference_local, reference_model)) return 8;
     const auto rebound = hp2::CpuSkinPoints(packed_influences, reference_model);
-    if (rebound.size() != 1u || !Near(rebound[0], skinning.reference_points[0])) return 7;
+    if (rebound.size() != 1u || !Near(rebound[0], skinning.reference_points[0])) return 9;
 
     hp2::PackageIndex package;
     package.valid = true;
@@ -190,25 +213,26 @@ int main() {
         package, "SyntheticAnimation", native
     );
     if (!animation.valid || animation.bones.size() != 2u || animation.moves.size() != 1u
-        || animation.sequences.size() != 1u || animation.total_track_count != 2u) return 8;
+        || animation.sequences.size() != 1u || animation.total_track_count != 2u) return 10;
     if (animation.master_quaternion_count != 4u || animation.master_position_count != 3u
-        || animation.master_delta_count != 4u || animation.remaining_bytes != 0u) return 9;
+        || animation.master_delta_count != 4u || animation.remaining_bytes != 0u) return 11;
     const auto& first_track = animation.moves[0].tracks[0];
     const auto& second_track = animation.moves[0].tracks[1];
     if (first_track.keys.rotations.size() != 2u || first_track.keys.positions.size() != 1u
         || second_track.keys.rotations.size() != 2u || second_track.keys.positions.size() != 2u) {
-        return 10;
+        return 12;
     }
     if (!Near(first_track.keys.rotations[1].time, 1.0f)
         || !Near(second_track.keys.positions[1].time, 1.0f)
         || !Near(first_track.keys.positions[0].value, {10.0f, 0.0f, 0.0f})
-        || !Near(second_track.keys.positions[1].value, {0.0f, 0.0f, 4.0f})) return 11;
+        || !Near(second_track.keys.positions[0].value, {0.0f, 2.0f, 0.0f})
+        || !Near(second_track.keys.positions[1].value, {0.0f, 0.0f, 4.0f})) return 13;
     if (second_track.keys.rotations[0].value.w >= 0.0f
-        || !Near(hp2::AnimationMoveDuration(animation.moves[0]), 1.25f)) return 12;
+        || !Near(hp2::AnimationMoveDuration(animation.moves[0]), 1.25f)) return 14;
 
     std::vector<std::uint8_t> truncated = native;
     truncated.pop_back();
-    if (hp2::ParseHP2AnimationNative(package, "Truncated", truncated).valid) return 13;
+    if (hp2::ParseHP2AnimationNative(package, "Truncated", truncated).valid) return 15;
 
     std::cout << "animation math tests passed\n";
     return 0;

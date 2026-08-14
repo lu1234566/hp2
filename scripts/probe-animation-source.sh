@@ -108,7 +108,7 @@ import pathlib
 import sys
 probe = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v12",
+    "schema": "hp2-animation-source-summary-v13",
     "installshield_cab_sets": int(sys.argv[3]),
     "runtime_valid": probe.get("valid", False),
     "runtime_error": probe.get("error"),
@@ -135,6 +135,7 @@ summary = {
     "bone_map_identity_entries": probe.get("bone_map_identity_entries", 0),
     "bone_map_negative_entries": probe.get("bone_map_negative_entries", 0),
     "bone_map_invalid_entries": probe.get("bone_map_invalid_entries", 0),
+    "convention_confirmed": probe.get("convention_confirmed", False),
     "best_quaternion_mapping": probe.get("best_quaternion_mapping"),
     "best_quaternion_components": probe.get("best_quaternion_components"),
     "best_quaternion_sign_mask": probe.get("best_quaternion_sign_mask"),

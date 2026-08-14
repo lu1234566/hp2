@@ -203,6 +203,8 @@ media. It matched all 135 animation bones to the mesh, reconstructed the bind
 pose with RMS error `7.23819e-06` and maximum error `1.63243e-05`, and sampled
 all 68 moves without a non-finite or unbounded frame. The largest normalized
 deformation was `0.595383`; the first accepted sequence was `talk_rhand`.
+That first probe's bounds-only acceptance was too permissive: a horizontal,
+stretched body could still fit its finite extent limits.
 
 On Android, the mesh path preserves each emitted triangle's source-point
 indices. The renderer selects a finite, bounded sequence with visible
@@ -212,7 +214,24 @@ actor transforms, and updates only the dedicated duelist-focus VBO range with
 room, the G5c2 object view, a static duelist bind pose and the moving duelist.
 Unstable sampled bounds fall back to the bind pose and emit a diagnostic log.
 
-The real-data semantic path is therefore validated, but G5 remains open until
-the moving character is captured and visually inspected on the Galaxy A57.
-Camera, collision and scripted gameplay remain G6 work and are intentionally
-not mixed into this checkpoint.
+The first Galaxy A57 G5d capture confirmed the complete room, G5c2 object view
+and coherent upright bind pose, but the moving view was a visual **FAIL**: the
+student rotated nearly horizontal and its lower body stretched. The bind result
+isolates the fault to animation-key interpretation rather than skeletal weights
+or mesh placement.
+
+A metadata-only convention sweep compared track mappings, sine versus linear
+quaternion components, every XYZ sign mask and both reconstructed W signs. All
+7,155 supplied bone-map entries are identity entries. Direct track order and
+the sine codec match the reference skeleton; relative to the first decoder,
+the best quaternion and position masks both flipped Y only. The corrected codec
+therefore removes that Y inversion from packed rotations and positions while
+retaining negative reconstructed W for non-root tracks. The Android selector
+prefers the measured `talk_rhand` sequence, and a shared regression check now
+rejects finite poses that no longer preserve the bind pose's upright axis. The
+private probe must also confirm direct order, sine components, zero remaining
+sign mask and the expected W sign before reporting success.
+
+G5 remains open until the corrected moving character is captured and visually
+inspected on the Galaxy A57. Camera, collision and scripted gameplay remain G6
+work and are intentionally not mixed into this checkpoint.

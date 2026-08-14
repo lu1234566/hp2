@@ -18,7 +18,7 @@ Quaternion DecodeHP2PackedQuaternion(
     bool root_track
 ) {
     const float x = std::sin(static_cast<float>(raw_x) * kHp2AngleScale);
-    const float y = -std::sin(static_cast<float>(raw_y) * kHp2AngleScale);
+    const float y = std::sin(static_cast<float>(raw_y) * kHp2AngleScale);
     const float z = std::sin(static_cast<float>(raw_z) * kHp2AngleScale);
     float w = std::sqrt(std::max(0.0f, 1.0f - x * x - y * y - z * z));
     if (!root_track) w = -w;
@@ -34,7 +34,7 @@ Vec3 DecodeHP2PackedPosition(
     const float factor = position_scale * kHp2VectorScale;
     return {
         static_cast<float>(raw_x) * factor,
-        -static_cast<float>(raw_y) * factor,
+        static_cast<float>(raw_y) * factor,
         static_cast<float>(raw_z) * factor,
     };
 }

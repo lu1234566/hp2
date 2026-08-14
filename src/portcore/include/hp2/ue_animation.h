@@ -110,6 +110,12 @@ std::vector<Vec3> CpuSkinPoints(
     const std::vector<BoneTransform>& model_pose
 );
 
+bool IsPlausibleDiagnosticPose(
+    const std::vector<Vec3>& reference,
+    const std::vector<Vec3>& candidate,
+    float* deformation_score = nullptr
+);
+
 bool BuildCpuSkinInfluences(
     const SkeletalMeshSkinningData& skinning,
     std::vector<std::vector<CpuSkinInfluence>>& influences,

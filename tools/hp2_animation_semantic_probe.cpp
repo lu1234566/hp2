@@ -35,14 +35,6 @@ std::string JsonEscape(const std::string& value) {
     return result;
 }
 
-struct Bounds {
-    bool valid = false;
-    hp2::Vec3 minimum;
-    hp2::Vec3 maximum;
-    hp2::Vec3 center;
-    float extent = 0.0f;
-};
-
 enum class TrackMapping {
     Direct,
     BoneToTrack,
@@ -235,71 +227,6 @@ PositionAlignment MeasurePositionAlignment(
     return best;
 }
 
-Bounds Measure(const std::vector<hp2::Vec3>& points) {
-    Bounds result;
-    for (const hp2::Vec3& point : points) {
-        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-            return {};
-        }
-        if (!result.valid) {
-            result.minimum = point;
-            result.maximum = point;
-            result.valid = true;
-        } else {
-            result.minimum.x = std::min(result.minimum.x, point.x);
-            result.minimum.y = std::min(result.minimum.y, point.y);
-            result.minimum.z = std::min(result.minimum.z, point.z);
-            result.maximum.x = std::max(result.maximum.x, point.x);
-            result.maximum.y = std::max(result.maximum.y, point.y);
-            result.maximum.z = std::max(result.maximum.z, point.z);
-        }
-    }
-    if (!result.valid) return result;
-    result.center = {
-        (result.minimum.x + result.maximum.x) * 0.5f,
-        (result.minimum.y + result.maximum.y) * 0.5f,
-        (result.minimum.z + result.maximum.z) * 0.5f,
-    };
-    result.extent = std::max({
-        result.maximum.x - result.minimum.x,
-        result.maximum.y - result.minimum.y,
-        result.maximum.z - result.minimum.z,
-    });
-    result.valid = std::isfinite(result.extent) && result.extent > 0.0f;
-    return result;
-}
-
-float DeformationScore(
-    const std::vector<hp2::Vec3>& reference,
-    const std::vector<hp2::Vec3>& candidate
-) {
-    if (reference.size() != candidate.size() || reference.empty()) return -1.0f;
-    const Bounds a = Measure(reference);
-    const Bounds b = Measure(candidate);
-    if (!a.valid || !b.valid) return -1.0f;
-    const float ratio = b.extent / a.extent;
-    if (!std::isfinite(ratio) || ratio < 0.25f || ratio > 4.0f) return -1.0f;
-    const hp2::Vec3 center_delta = {
-        b.center.x - a.center.x,
-        b.center.y - a.center.y,
-        b.center.z - a.center.z,
-    };
-    double squared = 0.0;
-    for (std::size_t index = 0; index < reference.size(); ++index) {
-        const double x = static_cast<double>(candidate[index].x - reference[index].x)
-            - center_delta.x;
-        const double y = static_cast<double>(candidate[index].y - reference[index].y)
-            - center_delta.y;
-        const double z = static_cast<double>(candidate[index].z - reference[index].z)
-            - center_delta.z;
-        squared += x * x + y * y + z * z;
-    }
-    const float score = static_cast<float>(
-        std::sqrt(squared / static_cast<double>(reference.size())) / a.extent
-    );
-    return std::isfinite(score) && score <= 2.0f ? score : -1.0f;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -381,6 +308,17 @@ int main(int argc, char** argv) {
                 ? 1u : 0u;
         }
     }
+    const bool bone_map_identity = bone_map_entries > 0u
+        && bone_map_identity_entries == bone_map_entries
+        && bone_map_negative_entries == 0u && bone_map_invalid_entries == 0u;
+    const bool convention_confirmed = bone_map_identity
+        && quaternion_alignment.mapping == TrackMapping::Direct
+        && !quaternion_alignment.linear_components
+        && quaternion_alignment.sign_mask == 0 && quaternion_alignment.w_sign == -1
+        && quaternion_alignment.samples > 0u && quaternion_alignment.mean_error <= 0.02
+        && position_alignment.mapping == TrackMapping::Direct
+        && position_alignment.sign_mask == 0 && position_alignment.samples > 0u
+        && position_alignment.relative_rms <= 0.25;
 
     std::size_t stable_moves = 0u;
     float maximum_deformation = 0.0f;
@@ -397,8 +335,12 @@ int main(int argc, char** argv) {
                 )) {
                 continue;
             }
-            const float deformation = DeformationScore(skinning.reference_points, points);
-            if (deformation < 0.0f) continue;
+            float deformation = 0.0f;
+            if (!hp2::IsPlausibleDiagnosticPose(
+                    skinning.reference_points, points, &deformation
+                )) {
+                continue;
+            }
             ++stable_moves;
             maximum_deformation = std::max(maximum_deformation, deformation);
             if (first_stable_sequence.empty() && move_index < animation.sequences.size()) {
@@ -415,11 +357,13 @@ int main(int argc, char** argv) {
         maximum_tracks = std::max(maximum_tracks, move.tracks.size());
     }
     const bool runtime_ok = animation.valid && influences_valid && skeleton_matches
-        && bind_valid && stable_moves > 0u && maximum_deformation > 0.002f;
+        && bind_valid && convention_confirmed && stable_moves > 0u
+        && maximum_deformation > 0.002f;
     const std::string error = !animation.valid ? animation.error
         : !influences_valid ? influence_error
         : !skeleton_matches ? "mesh and animation skeletons differ"
         : !bind_valid ? "reference-pose skinning mismatch"
+        : !convention_confirmed ? "animation key convention mismatch"
         : stable_moves == 0u ? "no stable animation move" : std::string{};
 
     std::cout << "{\n"
@@ -453,6 +397,8 @@ int main(int argc, char** argv) {
               << "  \"bone_map_identity_entries\":" << bone_map_identity_entries << ",\n"
               << "  \"bone_map_negative_entries\":" << bone_map_negative_entries << ",\n"
               << "  \"bone_map_invalid_entries\":" << bone_map_invalid_entries << ",\n"
+              << "  \"convention_confirmed\":"
+              << (convention_confirmed ? "true" : "false") << ",\n"
               << "  \"best_quaternion_mapping\":\""
               << TrackMappingName(quaternion_alignment.mapping) << "\",\n"
               << "  \"best_quaternion_components\":\""
