@@ -108,7 +108,7 @@ import pathlib
 import sys
 probe = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 summary = {
-    "schema": "hp2-animation-source-summary-v11",
+    "schema": "hp2-animation-source-summary-v12",
     "installshield_cab_sets": int(sys.argv[3]),
     "runtime_valid": probe.get("valid", False),
     "runtime_error": probe.get("error"),
@@ -131,6 +131,18 @@ summary = {
     "bind_valid": probe.get("bind_valid", False),
     "bind_rms": probe.get("bind_rms"),
     "bind_max": probe.get("bind_max"),
+    "bone_map_entries": probe.get("bone_map_entries", 0),
+    "bone_map_identity_entries": probe.get("bone_map_identity_entries", 0),
+    "bone_map_negative_entries": probe.get("bone_map_negative_entries", 0),
+    "bone_map_invalid_entries": probe.get("bone_map_invalid_entries", 0),
+    "best_quaternion_mapping": probe.get("best_quaternion_mapping"),
+    "best_quaternion_components": probe.get("best_quaternion_components"),
+    "best_quaternion_sign_mask": probe.get("best_quaternion_sign_mask"),
+    "best_quaternion_w_sign": probe.get("best_quaternion_w_sign"),
+    "best_quaternion_mean_error": probe.get("best_quaternion_mean_error"),
+    "best_position_mapping": probe.get("best_position_mapping"),
+    "best_position_sign_mask": probe.get("best_position_sign_mask"),
+    "best_position_relative_rms": probe.get("best_position_relative_rms"),
     "stable_moves": probe.get("stable_moves", 0),
     "max_deformation": probe.get("max_deformation"),
     "first_stable_sequence": probe.get("first_stable_sequence"),
